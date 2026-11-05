@@ -271,6 +271,65 @@ test('电脑记牌：三张 A 已出时 JJQQKK 不会再猜小', () => {
   assert.deepEqual(claims, [{ target: 0, dir: 'higher' }]);
 });
 
+test('电脑会分别报“比一个人大、比另一个人小”', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [
+        cardId(0, 'S', 5),
+        cardId(0, 'H', 5),
+        cardId(0, 'S', 6),
+        cardId(0, 'H', 6),
+        cardId(0, 'S', 7),
+        cardId(0, 'H', 7)
+      ],
+      1: [
+        cardId(0, 'S', 1),
+        cardId(0, 'H', 1),
+        cardId(0, 'S', 13),
+        cardId(0, 'H', 13),
+        cardId(0, 'S', 12),
+        cardId(0, 'H', 12)
+      ],
+      2: [
+        cardId(0, 'S', 8),
+        cardId(0, 'H', 8),
+        cardId(0, 'S', 9),
+        cardId(0, 'H', 9),
+        cardId(0, 'S', 10),
+        cardId(0, 'H', 10)
+      ]
+    },
+    0
+  );
+  playCards(room, 0, [
+    cardId(0, 'S', 5),
+    cardId(0, 'H', 5),
+    cardId(0, 'S', 6),
+    cardId(0, 'H', 6),
+    cardId(0, 'S', 7),
+    cardId(0, 'H', 7)
+  ]);
+  playCards(
+    room,
+    1,
+    [
+      cardId(0, 'S', 1),
+      cardId(0, 'H', 1),
+      cardId(0, 'S', 13),
+      cardId(0, 'H', 13),
+      cardId(0, 'S', 12),
+      cardId(0, 'H', 12)
+    ],
+    [{ target: 0, dir: 'higher' }]
+  );
+
+  const action = chooseAIAction(room, 2, () => 0.5);
+  const dirs = action.claims.map((claim) => claim.dir);
+  assert.deepEqual(dirs, ['higher', 'lower'], '应该比小虎大、比小兔小');
+});
+
 test('电脑报大小不会和前面的报法自相矛盾', () => {
   const room = makeAIRoom();
   seatTable(

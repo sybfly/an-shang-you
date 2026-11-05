@@ -28,6 +28,8 @@ const CLAIM_CALIBRATION = [
   [1, 0.97]
 ];
 
+const ORDER_SHIFT = 0.3;
+
 function calibrateClaimChance(value) {
   const p = Math.max(0, Math.min(1, value));
   for (let i = 1; i < CLAIM_CALIBRATION.length; i += 1) {
@@ -486,26 +488,39 @@ export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = 
     return prior.map((target) => ({ target, dir: 'lower' }));
   }
 
+  const ordered = orderPriorSeats(room, prior);
   const noisy = new Map();
   for (const target of prior) {
-    const chance = calibrateClaimChance(estimateHigherChance(room, seat, combo, target));
+    let chance = calibrateClaimChance(estimateHigherChance(room, seat, combo, target));
+    if (ordered?.hasEdge) {
+      const position = ordered.order.indexOf(target);
+      const middle = (ordered.order.length - 1) / 2;
+      if (position >= 0 && chance > 0.15 && chance < 0.85) {
+        // 前面已经排出 B < A：B 更弱，电脑比 B 大的概率应该更高；A 更强，则更低。
+        chance = Math.max(
+          0.02,
+          Math.min(0.98, chance + (middle - position) * ORDER_SHIFT)
+        );
+      }
+    }
     const uncertainty = 1 - Math.abs(chance - 0.5) * 2;
     const value = chance + (rng() - 0.5) * 0.12 * uncertainty;
     noisy.set(target, Math.max(0.02, Math.min(0.98, value)));
   }
 
-  const ordered = orderPriorSeats(room, prior);
   if (!ordered || !ordered.hasEdge) {
     return prior.map((target) => ({
       target,
       dir: rng() < noisy.get(target) ? 'higher' : 'lower'
     }));
   }
+  const percentile = estimateHigherChance(room, seat, combo, null);
+  const expectedCut = Math.round(percentile * ordered.order.length);
 
   let bestCut = 0;
   let bestScore = -Infinity;
   for (let cut = 0; cut <= ordered.order.length; cut += 1) {
-    let score = 0;
+    let score = -Math.abs(cut - expectedCut) * 0.5;
     for (let i = 0; i < ordered.order.length; i += 1) {
       const probability = noisy.get(ordered.order[i]);
       score += Math.log(i < cut ? probability : 1 - probability);
