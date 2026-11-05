@@ -173,6 +173,57 @@ test('电脑跟牌：会为了保留三连对而拆掉一张单牌', () => {
   assert.deepEqual(action.cards, [cardId(0, 'D', 9)], '出掉 9，留下 3-5 三连对');
 });
 
+test('电脑报大小不会和前面的报法自相矛盾', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 10)],
+      1: [cardId(0, 'S', 11)],
+      2: [cardId(0, 'S', 9)]
+    },
+    0
+  );
+  playCards(room, 0, [cardId(0, 'S', 10)]);
+  playCards(room, 1, [cardId(0, 'S', 11)], [{ target: 0, dir: 'higher' }]);
+  const action = chooseAIAction(room, 2, seeded(70));
+  const dirs = new Map(action.claims.map((claim) => [claim.target, claim.dir]));
+  assert.equal(
+    dirs.get(0) === 'lower' && dirs.get(1) === 'higher',
+    false,
+    '不能既说比 B 小、又说比 A 大'
+  );
+});
+
+test('电脑报大小会和更长的前后顺序保持一致', () => {
+  const room = makeAIRoom();
+  addAI(room);
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 10)],
+      1: [cardId(0, 'S', 11)],
+      2: [cardId(0, 'S', 12)],
+      3: [cardId(0, 'S', 9)]
+    },
+    0
+  );
+  playCards(room, 0, [cardId(0, 'S', 10)]);
+  playCards(room, 1, [cardId(0, 'S', 11)], [{ target: 0, dir: 'higher' }]);
+  playCards(room, 2, [cardId(0, 'S', 12)], [
+    { target: 0, dir: 'higher' },
+    { target: 1, dir: 'higher' }
+  ]);
+  const action = chooseAIAction(room, 3, seeded(71));
+  const dirs = action.claims.map((claim) => claim.dir);
+  const firstLower = dirs.indexOf('lower');
+  assert.equal(
+    firstLower < 0 || dirs.slice(firstLower).every((dir) => dir === 'lower'),
+    true,
+    '不能出现“低、高”反弹'
+  );
+});
+
 test('电脑推理：会参考目标之前成功打出的牌', () => {
   const room = makeAIRoom();
   room.deckInfo = { deckCount: 1, handSize: 18, revealedCount: 0, totalCards: 54 };

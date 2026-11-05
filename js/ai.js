@@ -302,6 +302,97 @@ export function chooseClaimDirection(room, seat, combo, rng = Math.random, targe
   return rng() < confidence ? 'higher' : 'lower';
 }
 
+/**
+ * 把前面已经出过牌的人按他们互相报的大小排成一个从低到高的顺序。
+ * 例如 B 先出、A 报“比 B 大”，顺序就是 [B, A]。
+ * 如果前面的报法自身绕成环（说明至少有人说错），返回 null。
+ */
+function orderPriorSeats(room, prior) {
+  const index = new Map(prior.map((seat, position) => [seat, position]));
+  const edges = new Map(prior.map((seat) => [seat, new Set()]));
+  const indegree = new Map(prior.map((seat) => [seat, 0]));
+  let hasEdge = false;
+
+  for (const seat of prior) {
+    const claims = room.actions?.[seat]?.claims || [];
+    for (const claim of claims) {
+      const target = claim.target;
+      if (!index.has(target) || target === seat) continue;
+      const from = claim.dir === 'higher' ? target : seat;
+      const to = claim.dir === 'higher' ? seat : target;
+      if (!edges.get(from).has(to)) {
+        edges.get(from).add(to);
+        indegree.set(to, indegree.get(to) + 1);
+        hasEdge = true;
+      }
+    }
+  }
+
+  if (!hasEdge) return { order: [...prior], hasEdge: false };
+
+  const queue = prior
+    .filter((seat) => indegree.get(seat) === 0)
+    .sort((a, b) => index.get(a) - index.get(b));
+  const order = [];
+  while (queue.length) {
+    const seat = queue.shift();
+    order.push(seat);
+    for (const next of edges.get(seat)) {
+      indegree.set(next, indegree.get(next) - 1);
+      if (indegree.get(next) === 0) {
+        queue.push(next);
+        queue.sort((a, b) => index.get(a) - index.get(b));
+      }
+    }
+  }
+
+  return order.length === prior.length ? { order, hasEdge: true } : null;
+}
+
+/**
+ * 给 AI 生成一组和前面报法不矛盾的猜测。
+ *
+ * 前面已经形成“B < A”这样的顺序时，电脑只能落在其中一个位置：
+ * 比所有人都小、夹在中间、或比所有人都大，不能既说比 B 小又说比 A 大。
+ * 这里枚举所有“切点”，选概率最高的那一种。
+ */
+export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = Math.random) {
+  const noisy = new Map();
+  for (const target of prior) {
+    const chance = estimateHigherChance(room, seat, combo, target);
+    const value = 0.5 + (chance - 0.5) * 0.8 + (rng() - 0.5) * 0.2;
+    noisy.set(target, Math.max(0.02, Math.min(0.98, value)));
+  }
+
+  const ordered = orderPriorSeats(room, prior);
+  if (!ordered || !ordered.hasEdge) {
+    return prior.map((target) => ({
+      target,
+      dir: rng() < noisy.get(target) ? 'higher' : 'lower'
+    }));
+  }
+
+  let bestCut = 0;
+  let bestScore = -Infinity;
+  for (let cut = 0; cut <= ordered.order.length; cut += 1) {
+    let score = 0;
+    for (let i = 0; i < ordered.order.length; i += 1) {
+      const probability = noisy.get(ordered.order[i]);
+      score += Math.log(i < cut ? probability : 1 - probability);
+    }
+    if (score > bestScore + 1e-9) {
+      bestScore = score;
+      bestCut = cut;
+    }
+  }
+
+  const directions = new Map();
+  ordered.order.forEach((target, i) => {
+    directions.set(target, i < bestCut ? 'higher' : 'lower');
+  });
+  return prior.map((target) => ({ target, dir: directions.get(target) }));
+}
+
 function scoreCandidate(room, seat, candidate, hand) {
   const played = new Set(candidate.cards);
   const remaining = hand.filter((id) => !played.has(id));
@@ -338,10 +429,7 @@ export function chooseAIAction(room, seat, rng = Math.random) {
   const prior = room.turnOrder
     .slice(0, index)
     .filter((targetSeat) => room.actions[targetSeat]?.played);
-  const claims = prior.map((targetSeat) => ({
-    target: targetSeat,
-    dir: chooseClaimDirection(room, seat, best.combo, rng, targetSeat)
-  }));
+  const claims = chooseConsistentClaimDirections(room, seat, best.combo, prior, rng);
 
   return { kind: 'play', cards: best.cards, claims };
 }

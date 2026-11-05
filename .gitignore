@@ -17,4 +17,7 @@ asar-files.txt
 asar-list.*
 avail*.txt
 check-pet*.mjs
+gh-http.mjs
+gh-probe.mjs
+url-probe.mjs
 
