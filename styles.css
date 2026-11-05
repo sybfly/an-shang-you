@@ -1205,6 +1205,11 @@ p {
   color: #ffc0b7;
 }
 
+.tag.blue {
+  background: rgba(126, 174, 255, 0.18);
+  color: #cfe0ff;
+}
+
 .ls-empty-copy {
   color: rgba(255, 250, 240, 0.38);
   font-size: 0.7rem;
@@ -1245,6 +1250,103 @@ p {
   flex-wrap: wrap;
   gap: 9px;
   align-items: center;
+}
+
+.btn-add-ai {
+  flex: 1 1 100%;
+  min-height: 44px;
+  font-size: 0.78rem;
+}
+
+.lobby-scores {
+  margin: 2px 0 12px;
+  padding: 10px 12px;
+  border: 1px solid rgba(255, 249, 232, 0.12);
+  border-radius: 14px;
+  background: rgba(4, 28, 20, 0.22);
+}
+
+.lobby-scores-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: rgba(255, 250, 240, 0.62);
+  font-size: 0.68rem;
+}
+
+.lobby-scores-head strong {
+  color: #fffaf0;
+  font-size: 0.78rem;
+}
+
+.lobby-scores-reset {
+  margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 249, 232, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: rgba(255, 250, 240, 0.62);
+  font-size: 0.62rem;
+  cursor: pointer;
+}
+
+.lobby-scores-reset:hover {
+  background: rgba(255, 249, 232, 0.08);
+}
+
+.lobby-scores-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.lobby-score-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 6px;
+  border-radius: 8px;
+  background: rgba(255, 249, 232, 0.04);
+  color: rgba(255, 250, 240, 0.82);
+  font-size: 0.72rem;
+}
+
+.lobby-score-rank {
+  width: 15px;
+  color: rgba(255, 250, 240, 0.45);
+  font-size: 0.64rem;
+  text-align: center;
+}
+
+.lobby-score-avatar {
+  width: 20px;
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.lobby-score-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-score-name i {
+  margin-left: 4px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(126, 174, 255, 0.16);
+  color: #cfe0ff;
+  font-size: 0.54rem;
+  font-style: normal;
+}
+
+.lobby-score-value {
+  color: #f6dc9f;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .btn-start {
@@ -1663,6 +1765,13 @@ p {
   font-weight: 700;
 }
 
+.seat-score {
+  margin-left: 5px;
+  color: #f2d28a;
+  font-style: normal;
+  font-weight: 700;
+}
+
 .seat-status {
   display: inline-flex;
   align-items: center;
@@ -2072,6 +2181,15 @@ p {
 
 .self-count {
   color: rgba(255, 249, 233, 0.46);
+}
+
+.self-score {
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(239, 196, 94, 0.16);
+  color: #f6dc9f;
+  font-size: 0.58rem;
+  font-weight: 800;
 }
 
 .self-turn-tag,
@@ -3109,7 +3227,7 @@ button.pcard.is-playable:hover {
   min-height: 39px;
   padding: 5px 9px;
   display: grid;
-  grid-template-columns: 24px 30px 1fr auto auto;
+  grid-template-columns: 24px 30px minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 7px;
   border: 1px solid rgba(83, 69, 41, 0.11);
@@ -3167,6 +3285,77 @@ button.pcard.is-playable:hover {
   color: #8d7b58;
   font-size: 0.58rem;
   white-space: nowrap;
+}
+
+.rank-points {
+  color: #80602d;
+  font-size: 0.58rem;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.scoreboard-list {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.scoreboard-row {
+  display: grid;
+  grid-template-columns: 22px 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid rgba(83, 69, 41, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+.scoreboard-row.is-self {
+  border-color: rgba(51, 98, 68, 0.26);
+  background: #eef4e8;
+}
+
+.scoreboard-rank {
+  color: #8d7b58;
+  font-size: 0.66rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.scoreboard-avatar {
+  font-size: 1rem;
+  text-align: center;
+}
+
+.scoreboard-name {
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreboard-name i {
+  margin-left: 5px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: rgba(43, 112, 79, 0.1);
+  color: #6d7f6a;
+  font-size: 0.54rem;
+  font-style: normal;
+}
+
+.scoreboard-name i.is-you {
+  color: #2b704f;
+}
+
+.scoreboard-value {
+  color: #80602d;
+  font-size: 0.8rem;
+  font-weight: 800;
 }
 
 .result-wait {

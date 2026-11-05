@@ -15,6 +15,7 @@ export const MIN_PLAYERS = 3;
 export const MAX_PLAYERS = 6;
 export const SUIT_ORDER = ['S', 'H', 'C', 'D'];
 export const AVATARS = ['🐼', '🐯', '🐰', '🐸', '🦊', '🐻'];
+export const AI_NAMES = ['小虎', '小兔', '小狐', '小熊', '小鹿'];
 
 export const DECK_COUNT_BY_PLAYERS = { 3: 1, 4: 2, 5: 2, 6: 3 };
 export const HAND_SIZE_BY_PLAYERS = { 3: 18, 4: 27, 5: 21, 6: 27 };
@@ -482,13 +483,14 @@ function makeSeat(name, options = {}) {
     avatar = '🐼',
     connected = true,
     isHost = false,
+    isAI = false,
     token = null,
     peerId = null
   } = options;
   return {
     name: cleanName(name),
     avatar,
-    isAI: false,
+    isAI,
     isHost,
     connected,
     token,
@@ -523,6 +525,11 @@ export function createRoom({
     winnerCandidates: [],
     finished: [],
     ranking: [],
+    scores: { 0: 0 },
+    gamesPlayed: 0,
+    gameNo: 0,
+    scoredGame: -1,
+    lastGameScores: {},
     seq: 1,
     deckInfo: null,
     lastEvent: null,
@@ -541,7 +548,7 @@ export function occupiedSeats(room) {
   return room.seats.map((player, index) => (player ? index : -1)).filter((i) => i >= 0);
 }
 
-export function addPlayer(room, { name, token, peerId }) {
+export function addPlayer(room, { name, token, peerId, isAI = false }) {
   if (room.phase !== 'lobby') {
     return { ok: false, error: 'NOT_LOBBY', message: '牌局已经开始了' };
   }
@@ -557,12 +564,30 @@ export function addPlayer(room, { name, token, peerId }) {
   }
   room.seats[seat] = makeSeat(name, {
     avatar: AVATARS[seat] || '🐼',
-    token: token || randomToken(),
-    peerId: peerId || null,
+    isAI,
+    token: isAI ? null : token || randomToken(),
+    peerId: isAI ? null : peerId || null,
     connected: true
   });
+  if (room.scores[seat] == null) room.scores[seat] = 0;
   room.seq += 1;
   return { ok: true, seat, player: room.seats[seat] };
+}
+
+export function addAI(room) {
+  if (room.phase !== 'lobby') {
+    return { ok: false, error: 'NOT_LOBBY', message: '牌局已经开始了' };
+  }
+  const seat = room.seats.findIndex((player, index) => index > 0 && !player);
+  if (seat < 0) {
+    return { ok: false, error: 'ROOM_FULL', message: '牌桌已经坐满六位了' };
+  }
+  const result = addPlayer(room, {
+    name: `电脑${AI_NAMES[seat - 1] || '小友'}`,
+    isAI: true
+  });
+  if (result.ok) result.player.avatar = '🤖';
+  return result;
 }
 
 export function removeSeat(room, seat) {
@@ -574,6 +599,8 @@ export function removeSeat(room, seat) {
   }
   const player = room.seats[seat];
   room.seats[seat] = null;
+  delete room.scores[seat];
+  delete room.lastGameScores[seat];
   room.seq += 1;
   return { ok: true, player };
 }
@@ -680,6 +707,11 @@ export function startGame(room, rng = Math.random) {
   room.ranking = [];
   room.round = 0;
   room.phase = 'lobby';
+  room.gameNo += 1;
+  room.lastGameScores = {};
+  for (const seat of seats) {
+    if (room.scores[seat] == null) room.scores[seat] = 0;
+  }
 
   const leader = seats[Math.floor(rng() * seats.length)];
   const result = beginRound(room, leader);
@@ -869,6 +901,23 @@ function advanceTurn(room) {
   room.turn = room.turnOrder[room.turnIndex];
 }
 
+/**
+ * 一局结束时按名次记分：第一名得 (人数-1) 分，依次递减，最后一名 0 分。
+ * 积分累计到下一局；同一个 gameNo 只结算一次。
+ */
+function applyGameScores(room) {
+  if (room.scoredGame === room.gameNo) return;
+  const total = room.ranking.length;
+  for (const entry of room.ranking) {
+    const points = Math.max(0, total - entry.place);
+    entry.points = points;
+    room.scores[entry.seat] = (room.scores[entry.seat] || 0) + points;
+    room.lastGameScores[entry.seat] = points;
+  }
+  room.scoredGame = room.gameNo;
+  room.gamesPlayed += 1;
+}
+
 export function resolveRound(room) {
   if (room.phase !== 'playing') return { ok: false, error: 'NOT_PLAYING' };
   if (room.turnIndex < room.turnOrder.length) {
@@ -1005,6 +1054,7 @@ export function resolveRound(room) {
     if (active.length === 0 && room.ranking.length > 0) {
       room.ranking[room.ranking.length - 1].last = true;
     }
+    applyGameScores(room);
     room.winnerCandidates = room.ranking.map((entry) => ({ ...entry }));
     room.lastEvent = {
       kind: 'gameOver',
@@ -1090,6 +1140,18 @@ export function resetToLobby(room) {
   return { ok: true };
 }
 
+export function resetScores(room) {
+  if (room.phase !== 'lobby') {
+    return fail('NOT_LOBBY', '回到大厅后才能清空积分');
+  }
+  for (const seat of occupiedSeats(room)) room.scores[seat] = 0;
+  room.gamesPlayed = 0;
+  room.lastGameScores = {};
+  room.scoredGame = room.gameNo;
+  room.seq += 1;
+  return { ok: true };
+}
+
 /* --------------------------------------------------------------------------
    快照
    -------------------------------------------------------------------------- */
@@ -1118,6 +1180,7 @@ function publicPlayer(room, seat) {
     connected: Boolean(player.connected),
     auto: Boolean(player.auto),
     cardCount: room.hands[seat]?.length || 0,
+    score: room.scores[seat] || 0,
     isTurn: room.phase === 'playing' && room.turn === seat,
     isLeader: room.phase === 'playing' && room.leader === seat,
     acted: Boolean(action?.acted),
@@ -1203,6 +1266,7 @@ export function buildSnapshot(room, viewerSeat) {
     canStart: room.phase === 'lobby' ? startResult.ok : false,
     startHint: room.phase === 'lobby' ? startResult.message : '',
     deckInfo: room.deckInfo,
+    gamesPlayed: room.gamesPlayed,
     players: room.seats.map((_, seat) => publicPlayer(room, seat)),
     self: viewer == null
       ? null
@@ -1214,6 +1278,7 @@ export function buildSnapshot(room, viewerSeat) {
           finished: Boolean(room.finished.find((entry) => entry.seat === viewer)),
           place:
             room.finished.find((entry) => entry.seat === viewer)?.place ?? null,
+          score: room.scores[viewer] || 0,
           pending: room.actions[viewer] ? actionMap[viewer] || null : null
         },
     leader: room.leader,
@@ -1253,6 +1318,7 @@ export function buildSnapshot(room, viewerSeat) {
       round: entry.round,
       key: entry.key,
       last: Boolean(entry.last),
+      points: entry.points ?? 0,
       combo: entry.combo ? comboPublic(entry.combo, true) : null
     })),
     activeCount,

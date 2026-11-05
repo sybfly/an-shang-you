@@ -2,6 +2,7 @@ import {
   CHAT_PHRASES,
   DECK_COUNT_BY_PLAYERS,
   MAX_PLAYERS,
+  addAI,
   addPlayer,
   analyzeCombo,
   buildSnapshot,
@@ -15,12 +16,14 @@ import {
   playCards,
   randomToken,
   removeSeat,
+  resetScores,
   resetToLobby,
   sameComboShape,
   sortHand,
   startGame,
   updateConnection
 } from './game.js';
+import { chooseAIAction } from './ai.js';
 import {
   PeerGuest,
   PeerHost,
@@ -75,7 +78,9 @@ const app = {
   guestStatus: 'idle',
   joinToken: null,
   actionPending: false,
-  handSheetOpen: false
+  handSheetOpen: false,
+  aiTimer: null,
+  aiTurnKey: ''
 };
 
 let settings = { ...DEFAULT_SETTINGS };
@@ -475,6 +480,7 @@ function showScreen(name) {
 }
 
 function goHome() {
+  clearAITimer();
   closePeers();
   app.mode = null;
   app.room = null;
@@ -568,7 +574,7 @@ function renderLobby() {
     }
     const isYou = seat === selfSeat();
     const canRemove =
-      snapshot.isHost && seat !== 0 && !player.connected;
+      snapshot.isHost && seat !== 0 && (player.isAI || !player.connected);
     seatHtml.push(
       `<div class="lobby-seat${isYou ? ' is-you' : ''}${player.connected ? '' : ' is-offline'}">
         ${canRemove ? `<button class="ls-remove" type="button" data-action="remove-seat" data-seat="${seat}" aria-label="移走 ${escapeHtml(player.name)}">×</button>` : ''}
@@ -576,6 +582,7 @@ function renderLobby() {
         <div class="ls-name">${escapeHtml(player.name)}</div>
         <div class="ls-tags">
           ${player.isHost ? '<span class="tag gold">房主</span>' : ''}
+          ${player.isAI ? '<span class="tag blue">电脑</span>' : ''}
           ${isYou ? '<span class="tag green">您</span>' : ''}
           ${player.connected ? '' : '<span class="tag red">掉线</span>'}
         </div>
@@ -591,6 +598,8 @@ function renderLobby() {
     const start = $('#btn-start');
     start.disabled = !snapshot.canStart;
     $('#lobby-start-hint').textContent = snapshot.startHint;
+    const addAi = $('#btn-add-ai');
+    if (addAi) addAi.disabled = count >= MAX_PLAYERS;
   }
 
   $('#lobby-connection').innerHTML = `<span class="connection-dot"></span><span>${
@@ -598,6 +607,47 @@ function renderLobby() {
       ? `房主牌桌 · 在线 ${count} 人`
       : '已连上房主，等大家入座'
   }</span>`;
+  renderLobbyScores();
+}
+
+function renderLobbyScores() {
+  const container = $('#lobby-scores');
+  const snapshot = app.snapshot;
+  if (!container || !snapshot) return;
+  if (!snapshot.gamesPlayed) {
+    container.classList.add('hidden');
+    container.innerHTML = '';
+    return;
+  }
+  const rows = (snapshot.players || [])
+    .map((player, seat) => (player ? { ...player, seat } : null))
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.seat - b.seat);
+  container.classList.remove('hidden');
+  container.innerHTML = `
+    <div class="lobby-scores-head">
+      <strong>累计积分</strong>
+      <span>已打 ${snapshot.gamesPlayed} 局</span>
+      ${
+        snapshot.isHost
+          ? '<button class="lobby-scores-reset" type="button" data-action="reset-scores">清零</button>'
+          : ''
+      }
+    </div>
+    <div class="lobby-scores-list">
+      ${rows
+        .map(
+          (player, index) => `<div class="lobby-score-row">
+            <span class="lobby-score-rank">${index + 1}</span>
+            <span class="lobby-score-avatar" aria-hidden="true">${escapeHtml(player.avatar)}</span>
+            <span class="lobby-score-name">${escapeHtml(player.name)}${
+              player.isAI ? '<i>电脑</i>' : ''
+            }</span>
+            <span class="lobby-score-value">${player.score} 分</span>
+          </div>`
+        )
+        .join('')}
+    </div>`;
 }
 
 /* --------------------------------------------------------------------------
@@ -732,7 +782,9 @@ function seatHtml(player, seat, snapshot) {
     </div>
     <div class="seat-copy">
       <span class="seat-name">${escapeHtml(player.name)}</span>
-      <span class="seat-sub"><b>${player.cardCount}</b> 张牌</span>
+      <span class="seat-sub"><b>${player.cardCount}</b> 张牌${
+        snapshot.gamesPlayed ? `<i class="seat-score">${player.score} 分</i>` : ''
+      }</span>
       <span class="seat-status ${statusClass}">${escapeHtml(seatStatusText(player, snapshot))}</span>
       ${seatClaimsHtml(action)}
     </div>
@@ -812,7 +864,12 @@ function renderCenter() {
       ? `跟「${snapshot.target.label}」`
       : '先出任意牌型';
   } else if (turnPlayer) {
-    if (!turnPlayer.connected) {
+    if (turnPlayer.isAI) {
+      $('#turn-title').textContent = `${turnPlayer.name} 正在想…`;
+      $('#turn-detail').textContent = snapshot.target
+        ? `跟「${snapshot.target.label}」`
+        : '电脑先出牌';
+    } else if (!turnPlayer.connected) {
       $('#turn-title').textContent = `等 ${turnPlayer.name} 连回来`;
       $('#turn-detail').textContent = '房主可以代为处理';
     } else {
@@ -868,6 +925,11 @@ function renderSelf() {
   $('#self-count').textContent = self.finished
     ? `已出完 · ${self.place === 1 ? '上游' : `第${self.place}名`}`
     : `${self.cardCount} 张牌`;
+  const selfScore = $('#self-score');
+  if (selfScore) {
+    selfScore.textContent = `${self.score} 分`;
+    selfScore.classList.toggle('hidden', !snapshot.gamesPlayed);
+  }
   const myTurn = snapshot.phase === 'playing' && snapshot.turn === self.seat;
   $('#self-turn-tag').classList.toggle('hidden', !myTurn || self.finished);
   $('#self-leader-tag').classList.toggle(
@@ -1316,7 +1378,7 @@ function publishHost() {
   applySnapshot(buildSnapshot(app.room, 0));
   if (app.peerHost) {
     for (const [seat, player] of app.room.seats.entries()) {
-      if (!player || player.isHost) continue;
+      if (!player || player.isHost || player.isAI) continue;
       if (!player.connected) continue;
       app.peerHost.send(seat, {
         type: 'state',
@@ -1325,13 +1387,71 @@ function publishHost() {
     }
   }
   updateConnectionPill();
+  scheduleAITurn();
+}
+
+function clearAITimer() {
+  if (app.aiTimer) clearTimeout(app.aiTimer);
+  app.aiTimer = null;
+  app.aiTurnKey = '';
+}
+
+function scheduleAITurn() {
+  if (app.mode !== 'host' || !app.room) return;
+  const room = app.room;
+  if (room.phase !== 'playing' || room.turn == null) return;
+  const player = room.seats[room.turn];
+  if (!player?.isAI) return;
+
+  const seat = room.turn;
+  const key = `${room.seq}:${seat}`;
+  if (app.aiTimer && app.aiTurnKey === key) return;
+  if (app.aiTimer) clearTimeout(app.aiTimer);
+  app.aiTimer = null;
+  app.aiTurnKey = key;
+
+  const delay = 900 + Math.floor(Math.random() * 600);
+  app.aiTimer = setTimeout(() => {
+    app.aiTimer = null;
+    app.aiTurnKey = '';
+    runAITurn(seat);
+  }, delay);
+}
+
+function runAITurn(seat) {
+  const room = app.room;
+  if (!room || app.mode !== 'host') return;
+  if (room.phase !== 'playing' || room.turn !== seat) return;
+  if (!room.seats[seat]?.isAI) return;
+
+  const action = chooseAIAction(room, seat);
+  let result = null;
+  if (action?.kind === 'play') {
+    result = playCards(room, seat, action.cards, action.claims);
+  } else if (action?.kind === 'pass') {
+    result = passTurn(room, seat);
+  }
+  if (!result?.ok) {
+    const hand = sortHand(room.hands[seat] || []);
+    if (seat === room.leader && hand.length) {
+      result = playCards(room, seat, [hand[hand.length - 1]], []);
+    } else {
+      result = passTurn(room, seat);
+    }
+  }
+  if (!result?.ok) {
+    console.warn('电脑出牌失败', result?.message || result?.error || 'unknown');
+    return;
+  }
+  tone(action?.kind === 'pass' ? 'pass' : 'card');
+  publishHost();
 }
 
 function broadcastChat(seat, text) {
   if (!app.room) return;
   const message = { type: 'chat', seat, text };
   for (const [targetSeat, player] of app.room.seats.entries()) {
-    if (!player || player.isHost) continue;
+    if (!player || player.isHost || player.isAI) continue;
     if (!player.connected) continue;
     app.peerHost?.send(targetSeat, message);
   }
@@ -1788,10 +1908,41 @@ function hostSkipCurrent(mode = 'pass') {
   publishHost();
 }
 
+function hostAddAI() {
+  if (app.mode !== 'host' || !app.room) return;
+  const result = addAI(app.room);
+  if (!result.ok) {
+    toast(result.message || '现在不能加电脑', { warm: true });
+    return;
+  }
+  publishHost();
+  toast(`${result.player.name} 入座了`);
+  tone('tap');
+}
+
+function hostResetScores() {
+  if (app.mode !== 'host' || !app.room) return;
+  openConfirm({
+    title: '要清空累计积分吗？',
+    body: '所有座位的积分会归零，牌桌和座位都保留。',
+    confirmText: '清空积分',
+    onConfirm: () => {
+      const result = resetScores(app.room);
+      if (!result.ok) {
+        toast(result.message || '现在不能清空积分', { warm: true });
+        return;
+      }
+      publishHost();
+      toast('积分已清零');
+      tone('tap');
+    }
+  });
+}
+
 function hostRemoveSeat(seat) {
   if (app.mode !== 'host' || !app.room) return;
   const player = app.room.seats[seat];
-  if (!player || player.connected) return;
+  if (!player || (!player.isAI && player.connected)) return;
   const result = removeSeat(app.room, seat);
   if (!result.ok) {
     toast(result.message || '不能移走这个座位', { warm: true });
@@ -1983,6 +2134,7 @@ function openResult() {
         <span class="rank-avatar" aria-hidden="true">${escapeHtml(player?.avatar || '🐼')}</span>
         <span class="rank-name">${escapeHtml(player?.name || '牌友')}</span>
         <span class="rank-tag">${label}</span>
+        <span class="rank-points">+${entry.points ?? 0} · 总 ${player?.score ?? 0}</span>
         <span class="rank-combo">${escapeHtml(
           entry.last ? '最后留下' : entry.combo?.label || ''
         )}</span>
@@ -2011,6 +2163,46 @@ function openResult() {
   );
   tone('win');
   startConfetti();
+}
+
+function openScores() {
+  const snapshot = app.snapshot;
+  if (!snapshot) return;
+  const players = (snapshot.players || [])
+    .map((player, seat) => (player ? { ...player, seat } : null))
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a.seat - b.seat);
+  const count = players.length;
+  const rows = players
+    .map(
+      (player, index) => `<div class="scoreboard-row${player.seat === selfSeat() ? ' is-self' : ''}">
+        <span class="scoreboard-rank">${index + 1}</span>
+        <span class="scoreboard-avatar" aria-hidden="true">${escapeHtml(player.avatar)}</span>
+        <span class="scoreboard-name">${escapeHtml(player.name)}${
+          player.isAI ? '<i>电脑</i>' : ''
+        }${player.seat === selfSeat() ? '<i class="is-you">您</i>' : ''}</span>
+        <span class="scoreboard-value">${player.score} 分</span>
+      </div>`
+    )
+    .join('');
+  openModal(
+    `<p class="modal-eyebrow">累计积分</p>
+     <h2>记分板</h2>
+     <p class="modal-lead">${
+       snapshot.gamesPlayed
+         ? `已经打完 ${snapshot.gamesPlayed} 局。`
+         : '还没有打完一局，先开一桌吧。'
+     }${
+       count
+         ? ` 每局按名次记分：第一名 ${count - 1} 分，依次递减，最后一名 0 分。`
+         : ''
+     }</p>
+     <div class="scoreboard-list">${rows}</div>
+     <div class="modal-actions">
+       <button class="btn btn-primary" type="button" data-action="close-modal">知道了</button>
+     </div>`,
+    { type: 'scores', closeable: true }
+  );
 }
 
 /* --------------------------------------------------------------------------
@@ -2197,6 +2389,15 @@ async function handleAction(action, target) {
     case 'host-lead':
       hostSkipCurrent('lead');
       break;
+    case 'add-ai':
+      hostAddAI();
+      break;
+    case 'reset-scores':
+      hostResetScores();
+      break;
+    case 'show-scores':
+      openScores();
+      break;
     case 'remove-seat':
       hostRemoveSeat(Number(target.dataset.seat));
       break;
@@ -2368,6 +2569,7 @@ function init() {
   });
 
   window.addEventListener('beforeunload', () => {
+    clearAITimer();
     try {
       app.peerHost?.close();
     } catch {

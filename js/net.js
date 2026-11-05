@@ -7,7 +7,7 @@
  * 只转发加密数据，不解析牌局。
  */
 
-export const PROTOCOL_VERSION = 1;
+export const PROTOCOL_VERSION = 2;
 export const ROOM_PREFIX = 'leling-darksy-v1-';
 
 export const PEER_ERRORS = {

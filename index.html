@@ -11,9 +11,9 @@
     <title>暗上游 · 乐龄牌桌</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20261104-5" />
-    <script src="vendor/peerjs.min.js?v=20261104-5" defer></script>
-    <script type="module" src="js/app.js?v=20261104-5"></script>
+    <link rel="stylesheet" href="styles.css?v=20261105-1" />
+    <script src="vendor/peerjs.min.js?v=20261105-1" defer></script>
+    <script type="module" src="js/app.js?v=20261105-1"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -192,7 +192,12 @@
                 </div>
                 <div class="lobby-seats" id="lobby-seats"></div>
 
+                <div class="lobby-scores hidden" id="lobby-scores"></div>
+
                 <div class="lobby-host-tools hidden" id="lobby-host-tools">
+                  <button class="btn btn-soft btn-add-ai" id="btn-add-ai" type="button" data-action="add-ai">
+                    加一位电脑
+                  </button>
                   <button class="btn btn-primary btn-start" id="btn-start" type="button">
                     开始这一局
                   </button>
@@ -225,6 +230,7 @@
                 <span id="table-round-label">第 1 轮</span>
               </div>
               <div class="table-meta-right">
+                <button class="table-meta-btn" id="btn-scores" type="button" data-action="show-scores">积分</button>
                 <button class="table-meta-btn" id="btn-round-log" type="button">本轮记录</button>
                 <button class="table-meta-btn" id="btn-game-rules" type="button">规则</button>
               </div>
@@ -268,6 +274,7 @@
                   <span class="self-avatar" id="self-avatar">🐼</span>
                   <span class="self-name" id="self-name">我</span>
                   <span class="self-count" id="self-count">0 张牌</span>
+                  <span class="self-score hidden" id="self-score">0 分</span>
                   <span class="self-turn-tag hidden" id="self-turn-tag">轮到您</span>
                   <span class="self-leader-tag hidden" id="self-leader-tag">先手</span>
                   <span class="self-place-tag hidden" id="self-place-tag">已出完</span>
