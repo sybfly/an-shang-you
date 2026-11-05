@@ -264,6 +264,79 @@ function enumerateCombos(hand, target = null) {
   return candidates;
 }
 
+/**
+ * 还可能留在对手手里的牌（按点数统计）。
+ * 只扣掉自己的手牌、明牌和“已经成功打出去”的牌；
+ * 猜错被收回的牌仍然在对手手里，不能当成已经没了。
+ */
+function availableRankCounts(room, seat) {
+  const deckCount = room.deckInfo?.deckCount || 1;
+  const totals = deckRankTotals(deckCount);
+  const removed = new Set(room.hands?.[seat] || []);
+  for (const id of room.revealed || []) removed.add(id);
+  for (const play of room.publicPlays || []) {
+    if (!play.success) continue;
+    for (const id of play.cards || []) removed.add(id);
+  }
+  for (const id of removed) {
+    const card = parseCard(id);
+    if (!card) continue;
+    totals.set(card.rankValue, Math.max(0, (totals.get(card.rankValue) || 0) - 1));
+  }
+  return totals;
+}
+
+function sequenceStarts(length) {
+  return 15 - length; // 顺子 5 张 start 1..10，三连对 3 对 start 1..12，钢板 start 1..13
+}
+
+function hasSequenceBeyond(counts, length, need, key, direction) {
+  for (let start = 1; start <= sequenceStarts(length); start += 1) {
+    const values = sequenceRankValues(start, length);
+    const high = values[values.length - 1];
+    if (direction === 'higher' ? high <= key : high >= key) continue;
+    if (values.every((rankValue) => (counts.get(rankValue) || 0) >= need)) return true;
+  }
+  return false;
+}
+
+function hasGroupBeyond(counts, need, key, direction) {
+  for (const [rankValue, count] of counts) {
+    if (count < need) continue;
+    if (direction === 'higher' ? rankValue > key : rankValue < key) return true;
+  }
+  return false;
+}
+
+function hasFullHouseBeyond(counts, key, direction) {
+  for (const [tripleRank, tripleCount] of counts) {
+    if (tripleCount < 3) continue;
+    if (direction === 'higher' ? tripleRank <= key : tripleRank >= key) continue;
+    for (const [pairRank, pairCount] of counts) {
+      if (pairRank !== tripleRank && pairCount >= 2) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * 记牌推断：同牌型里是否还可能凑出比自己更大/更小的组合。
+ * 如果不可能，就不该再靠概率猜了。
+ */
+function canFormBeyond(room, seat, combo, direction) {
+  if (!combo) return true;
+  const counts = availableRankCounts(room, seat);
+  if (combo.type === 'single') return hasGroupBeyond(counts, 1, combo.key, direction);
+  if (combo.type === 'pair') return hasGroupBeyond(counts, 2, combo.key, direction);
+  if (combo.type === 'triple') return hasGroupBeyond(counts, 3, combo.key, direction);
+  if (combo.type === 'multi') return hasGroupBeyond(counts, combo.size, combo.key, direction);
+  if (combo.type === 'fullhouse') return hasFullHouseBeyond(counts, combo.key, direction);
+  if (combo.type === 'straight') return hasSequenceBeyond(counts, 5, 1, combo.key, direction);
+  if (combo.type === 'pairseq') return hasSequenceBeyond(counts, 3, 2, combo.key, direction);
+  if (combo.type === 'steel') return hasSequenceBeyond(counts, 2, 3, combo.key, direction);
+  return true;
+}
+
 function groupFits(combo, count) {
   if (combo.type === 'single' || combo.type === 'straight') return count >= 1;
   if (combo.type === 'pair' || combo.type === 'pairseq') return count >= 2;
@@ -404,6 +477,12 @@ export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = 
     return prior.map((target) => ({ target, dir: 'higher' }));
   }
   if (bounds.min != null && combo.key <= bounds.min) {
+    return prior.map((target) => ({ target, dir: 'lower' }));
+  }
+  if (!canFormBeyond(room, seat, combo, 'higher')) {
+    return prior.map((target) => ({ target, dir: 'higher' }));
+  }
+  if (!canFormBeyond(room, seat, combo, 'lower')) {
     return prior.map((target) => ({ target, dir: 'lower' }));
   }
 

@@ -23,6 +23,7 @@ import {
 import {
   chooseAIAction,
   chooseClaimDirection,
+  chooseConsistentClaimDirections,
   estimateEqualChance,
   estimateHandTurns,
   estimateHigherChance,
@@ -240,6 +241,34 @@ test('电脑不会把同牌型里的最大点数猜小', () => {
   assert.equal(analyzeCombo(action.cards).combo.type, 'pairseq');
   assert.equal(analyzeCombo(action.cards).combo.key, 14);
   assert.deepEqual(action.claims, [{ target: 0, dir: 'higher' }]);
+});
+
+test('电脑记牌：三张 A 已出时 JJQQKK 不会再猜小', () => {
+  const room = makeAIRoom();
+  room.deckInfo = { deckCount: 1, handSize: 18, revealedCount: 0, totalCards: 54 };
+  room.revealed = [];
+  room.publicPlays = [
+    {
+      seat: 0,
+      success: true,
+      round: 1,
+      cards: [cardId(0, 'S', 1), cardId(0, 'H', 1), cardId(0, 'C', 1)]
+    }
+  ];
+  room.hands[1] = [
+    cardId(0, 'S', 11),
+    cardId(0, 'H', 11),
+    cardId(0, 'S', 12),
+    cardId(0, 'H', 12),
+    cardId(0, 'S', 13),
+    cardId(0, 'H', 13)
+  ];
+  const combo = analyzeCombo(room.hands[1]).combo;
+  assert.equal(combo.type, 'pairseq');
+  assert.equal(combo.key, 13);
+
+  const claims = chooseConsistentClaimDirections(room, 1, combo, [0], () => 0.99);
+  assert.deepEqual(claims, [{ target: 0, dir: 'higher' }]);
 });
 
 test('电脑报大小不会和前面的报法自相矛盾', () => {
