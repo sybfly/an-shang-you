@@ -865,7 +865,7 @@ function renderCenter() {
       : '先出任意牌型';
   } else if (turnPlayer) {
     if (turnPlayer.isAI) {
-      $('#turn-title').textContent = `${turnPlayer.name} 正在想…`;
+      $('#turn-title').textContent = `${turnPlayer.name} 正在配牌…`;
       $('#turn-detail').textContent = snapshot.target
         ? `跟「${snapshot.target.label}」`
         : '电脑先出牌';

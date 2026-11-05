@@ -531,6 +531,7 @@ export function createRoom({
     scoredGame: -1,
     lastGameScores: {},
     publicCards: [],
+    publicPlays: [],
     seq: 1,
     deckInfo: null,
     lastEvent: null,
@@ -757,6 +758,7 @@ export function startGame(room, rng = Math.random) {
     totalCards: deckCount * 54
   };
   room.publicCards = [];
+  room.publicPlays = [];
   const dealCheck = validateDeal(room);
   if (!dealCheck.ok) {
     return fail('BAD_DEAL', dealCheck.message);
@@ -1081,6 +1083,12 @@ export function resolveRound(room) {
     for (const action of actions) {
       if (!action.played) continue;
       for (const id of action.cards) publicCards.add(id);
+      room.publicPlays.push({
+        seat: action.seat,
+        cards: [...action.cards],
+        success: action.status === 'success',
+        round: room.round
+      });
     }
     room.publicCards = [...publicCards];
   }
@@ -1208,6 +1216,7 @@ export function resetToLobby(room) {
   room.ranking = [];
   room.deckInfo = null;
   room.publicCards = [];
+  room.publicPlays = [];
   room.lastEvent = null;
   for (const player of room.seats.filter(Boolean)) {
     player.auto = false;

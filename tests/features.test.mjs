@@ -23,6 +23,7 @@ import {
 import {
   chooseAIAction,
   chooseClaimDirection,
+  estimateHandTurns,
   estimateHigherChance,
   remainingRankCounts
 } from '../js/ai.js';
@@ -118,6 +119,91 @@ test('电脑记牌：公开出牌后，没见过的牌会减少', () => {
   const counts = remainingRankCounts(room, 0);
   const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
   assert.equal(total, 52, '54 张牌减去 2 张公开牌，还剩 52 张没见过');
+});
+
+test('电脑配牌：优先选择让剩下手数更少的出法', () => {
+  assert.equal(estimateHandTurns([cardId(0, 'S', 3), cardId(0, 'H', 4), cardId(0, 'C', 5), cardId(0, 'D', 6), cardId(0, 'S', 7)]), 1);
+
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 8)],
+      1: [
+        cardId(0, 'S', 3),
+        cardId(0, 'H', 4),
+        cardId(0, 'C', 5),
+        cardId(0, 'D', 6),
+        cardId(0, 'S', 7),
+        cardId(0, 'H', 13),
+        cardId(0, 'C', 13)
+      ],
+      2: [cardId(0, 'D', 9)]
+    },
+    1
+  );
+  const action = chooseAIAction(room, 1, seeded(61));
+  assert.equal(action.kind, 'play');
+  assert.equal(action.cards.length, 5, '先手应该打顺子，而不是只出一张');
+  assert.equal(analyzeCombo(action.cards).combo.type, 'straight');
+});
+
+test('电脑跟牌：会为了保留三连对而拆掉一张单牌', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 8)],
+      1: [
+        cardId(0, 'S', 3),
+        cardId(0, 'H', 3),
+        cardId(0, 'S', 4),
+        cardId(0, 'H', 4),
+        cardId(0, 'S', 5),
+        cardId(0, 'H', 5),
+        cardId(0, 'D', 9)
+      ],
+      2: [cardId(0, 'C', 6)]
+    },
+    0
+  );
+  playCards(room, 0, [cardId(0, 'S', 8)]);
+  const action = chooseAIAction(room, 1, seeded(62));
+  assert.equal(action.kind, 'play');
+  assert.deepEqual(action.cards, [cardId(0, 'D', 9)], '出掉 9，留下 3-5 三连对');
+});
+
+test('电脑推理：会参考目标之前成功打出的牌', () => {
+  const room = makeAIRoom();
+  room.deckInfo = { deckCount: 1, handSize: 18, revealedCount: 0, totalCards: 54 };
+  room.hands[1] = [cardId(0, 'S', 10)];
+  room.publicCards = [];
+  room.publicPlays = [];
+  room.revealed = [];
+  const combo = comboOfOne(cardId(0, 'S', 10));
+  const base = estimateHigherChance(room, 1, combo, 0);
+
+  room.publicPlays = [
+    {
+      seat: 0,
+      success: true,
+      round: 1,
+      cards: [cardId(0, 'H', 13), cardId(0, 'C', 12), cardId(0, 'D', 15)]
+    }
+  ];
+  const afterHigh = estimateHigherChance(room, 1, combo, 0);
+  assert.ok(afterHigh > base, '对手打掉高牌后，猜大把握应该更高');
+
+  room.publicPlays = [
+    {
+      seat: 0,
+      success: true,
+      round: 1,
+      cards: [cardId(0, 'H', 3), cardId(0, 'C', 4), cardId(0, 'D', 5)]
+    }
+  ];
+  const afterLow = estimateHigherChance(room, 1, combo, 0);
+  assert.ok(afterLow < base, '对手打掉低牌后，猜大把握应该更低');
 });
 
 test('电脑推理：牌型越高越敢猜大，公开高牌后会更有把握', () => {
