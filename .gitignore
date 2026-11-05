@@ -1,0 +1,20 @@
+.edge-*/
+.edge-profile/
+.edge-shot/
+.edge-public/
+.edge-public2/
+.edge-public-test/
+.test-artifacts/
+.tools/
+dist/
+.wrangler/
+*.png
+!assets/*.png
+scripts-public-test.mjs
+
+# 本地排查脚本与导出，不属于站点，不要提交
+asar-files.txt
+asar-list.*
+avail*.txt
+check-pet*.mjs
+

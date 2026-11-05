@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#153f30" />
+    <meta
+      name="description"
+      content="暗上游：三人起局的暗牌猜大小扑克。大字、慢节奏，亲友浏览器点对点同桌，不设游戏服务器。"
+    />
+    <title>暗上游 · 乐龄牌桌</title>
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="stylesheet" href="styles.css?v=20261104-5" />
+    <script src="vendor/peerjs.min.js?v=20261104-5" defer></script>
+    <script type="module" src="js/app.js?v=20261104-5"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到主要内容</a>
+
+    <div class="app-shell">
+      <header class="topbar" id="topbar">
+        <button class="brand" id="brand-home" type="button" aria-label="回到暗上游首页">
+          <span class="brand-mark" aria-hidden="true"><span>暗</span></span>
+          <span class="brand-copy">
+            <strong>暗上游</strong>
+            <small>扣牌猜大小 · 老友同桌</small>
+          </span>
+        </button>
+
+        <div class="topbar-actions">
+          <span class="connection-pill hidden" id="connection-pill" aria-live="polite">
+            <span class="connection-dot"></span>
+            <span id="connection-text">未联网</span>
+          </span>
+          <button class="text-btn" id="btn-sound" type="button" aria-pressed="true">
+            <span class="text-btn-icon" id="sound-icon" aria-hidden="true">🔔</span>
+            <span id="sound-label">声音开</span>
+          </button>
+          <button class="text-btn" id="btn-settings" type="button">
+            <span class="text-btn-icon" aria-hidden="true">⚙</span>
+            <span>设置</span>
+          </button>
+        </div>
+      </header>
+
+      <main id="main-content">
+        <section class="screen home-screen" id="screen-home">
+          <div class="home-wrap">
+            <div class="hero">
+              <div class="hero-eyebrow"><span></span>三人起局 · 点对点 · 无游戏服务器</div>
+              <h1>牌扣在桌上，<br /><em>大小</em>猜在心里。</h1>
+              <p class="hero-lead">
+                每人扣一张暗牌，只报牌型，再猜自己比前几位大还是小。猜错只收回自己的牌。
+                最先出完的是上游，然后血战到底，最后留下的就是下游。
+              </p>
+
+              <div class="hero-points" aria-label="游戏特点">
+                <span><b>🃏</b> 3～6 人</span>
+                <span><b>🤫</b> 暗牌猜大小</span>
+                <span><b>🔥</b> 血战到底</span>
+              </div>
+
+              <div class="hero-cards" aria-hidden="true">
+                <div class="hero-card hero-card-back">
+                  <span class="hero-back-mark">暗</span>
+                  <span class="hero-back-note">只报牌型</span>
+                </div>
+                <div class="hero-card hero-card-face red">
+                  <span class="hc-corner"><b>K</b><i>♥</i></span>
+                  <span class="hc-suit">♥</span>
+                  <span class="hc-note">比上家大？</span>
+                </div>
+                <div class="hero-card hero-card-face">
+                  <span class="hc-corner"><b>7</b><i>♠</i></span>
+                  <span class="hc-suit">♠</span>
+                  <span class="hc-note">猜错就收回</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="home-panel">
+              <label class="name-field" for="input-name">
+                <span class="field-label">怎么称呼您</span>
+                <span class="input-wrap">
+                  <span class="input-avatar" aria-hidden="true">🐼</span>
+                  <input
+                    id="input-name"
+                    name="name"
+                    type="text"
+                    maxlength="8"
+                    autocomplete="nickname"
+                    placeholder="例如：王阿姨"
+                  />
+                </span>
+              </label>
+
+              <button class="btn btn-primary btn-xl create-btn" id="btn-create" type="button">
+                <span class="create-icon" aria-hidden="true">🪑</span>
+                <span class="create-copy">
+                  <strong>开一桌</strong>
+                  <small>把房间号告诉两位以上亲友</small>
+                </span>
+                <span class="btn-arrow" aria-hidden="true">→</span>
+              </button>
+
+              <button class="btn btn-cream btn-xl join-toggle" id="btn-show-join" type="button">
+                <span class="create-icon" aria-hidden="true">🚪</span>
+                <span class="create-copy">
+                  <strong>加入牌桌</strong>
+                  <small>输入房主给的六位房间号</small>
+                </span>
+              </button>
+
+              <form class="join-form hidden" id="join-form" novalidate>
+                <label for="input-room">请输入房间号</label>
+                <div class="join-row">
+                  <input
+                    id="input-room"
+                    name="room"
+                    type="text"
+                    inputmode="numeric"
+                    pattern="[0-9]*"
+                    maxlength="6"
+                    autocomplete="one-time-code"
+                    placeholder="6 位数字"
+                    aria-describedby="join-error"
+                  />
+                  <button class="btn btn-primary" id="btn-join" type="submit">入座</button>
+                </div>
+                <p class="form-error" id="join-error" role="alert"></p>
+              </form>
+
+              <div class="quick-rules" aria-label="玩法四步">
+                <div><b>1</b><span>发牌</span></div>
+                <div><b>2</b><span>扣牌报型</span></div>
+                <div><b>3</b><span>猜大小</span></div>
+                <div><b>4</b><span>先出完</span></div>
+              </div>
+
+              <p class="privacy-note">
+                <span aria-hidden="true">🌿</span>
+                牌局只在牌友的浏览器之间传递。不设游戏服务器，不保存牌局。
+              </p>
+            </div>
+          </div>
+
+          <footer class="home-footer">
+            <span>暗上游 · 3～6 人 · 顺子 / 三连对 / 钢板 / 多张</span>
+            <button type="button" id="btn-home-rules">先看看完整规则</button>
+          </footer>
+        </section>
+
+        <section class="screen lobby-screen hidden" id="screen-lobby">
+          <div class="lobby-wrap">
+            <div class="lobby-intro">
+              <p class="eyebrow">亲友暗牌桌</p>
+              <h1 id="lobby-title">牌桌开好啦</h1>
+              <p class="lobby-sub" id="lobby-sub">把房间号念给亲友，等三位以上入座。</p>
+
+              <div class="room-code-card">
+                <span class="room-code-label">房间号</span>
+                <button class="room-code" id="room-code" type="button" data-action="copy-code" title="点一下复制房间号">
+                  000 000
+                </button>
+                <div class="room-code-actions">
+                  <button class="btn btn-small btn-soft" id="btn-copy-code" type="button">
+                    复制房间号
+                  </button>
+                  <button class="btn btn-small btn-soft" id="btn-share-link" type="button">
+                    复制邀请链接
+                  </button>
+                </div>
+              </div>
+
+              <div class="lobby-notes">
+                <p><b>1</b> 亲友打开同一个网页</p>
+                <p><b>2</b> 点“加入牌桌”，输入房间号</p>
+                <p><b>3</b> 三人起局，最多六人</p>
+              </div>
+
+              <button class="btn btn-quiet-light" id="btn-lobby-leave" type="button">
+                离开牌桌
+              </button>
+            </div>
+
+            <div class="lobby-table-wrap">
+              <div class="lobby-table">
+                <div class="lobby-table-head">
+                  <h2>牌桌座位</h2>
+                  <span id="lobby-seat-count">1 / 6 位</span>
+                </div>
+                <div class="lobby-seats" id="lobby-seats"></div>
+
+                <div class="lobby-host-tools hidden" id="lobby-host-tools">
+                  <button class="btn btn-primary btn-start" id="btn-start" type="button">
+                    开始这一局
+                  </button>
+                  <p class="lobby-start-hint" id="lobby-start-hint">至少三位牌友才能开局</p>
+                </div>
+
+                <div class="lobby-guest-wait hidden" id="lobby-guest-wait">
+                  <span class="waiting-flower" aria-hidden="true">🌼</span>
+                  <p>您已经入座啦，等房主开始这一局。</p>
+                </div>
+              </div>
+
+              <div class="lobby-connection" id="lobby-connection">
+                <span class="connection-dot"></span>
+                <span>正在连接牌桌…</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="screen game-screen hidden" id="screen-game">
+          <div class="game-wrap">
+            <div class="table-meta">
+              <button class="table-meta-btn" id="btn-table-menu" type="button">
+                <span aria-hidden="true">☰</span> 牌桌
+              </button>
+              <div class="table-meta-center">
+                <span id="table-room-label">亲友牌桌</span>
+                <span class="meta-dot" aria-hidden="true">·</span>
+                <span id="table-round-label">第 1 轮</span>
+              </div>
+              <div class="table-meta-right">
+                <button class="table-meta-btn" id="btn-round-log" type="button">本轮记录</button>
+                <button class="table-meta-btn" id="btn-game-rules" type="button">规则</button>
+              </div>
+            </div>
+
+            <div class="felt" id="felt">
+              <div class="felt-deco felt-deco-one" aria-hidden="true">♠</div>
+              <div class="felt-deco felt-deco-two" aria-hidden="true">♥</div>
+              <div class="felt-stitch" aria-hidden="true"></div>
+
+              <div class="opponents" id="opponents"></div>
+
+              <div class="center-stage">
+                <div class="center-topline">
+                  <span class="round-chip" id="round-chip">第 1 轮</span>
+                  <span class="deck-chip" id="deck-chip">3人 · 1副牌</span>
+                </div>
+
+                <div class="target-panel">
+                  <span class="target-label">本轮牌型</span>
+                  <strong id="target-type">等先手扣牌</strong>
+                  <small id="target-sub">先手可以出任意牌型，只报牌型</small>
+                </div>
+
+                <div class="turn-callout" id="turn-callout" aria-live="polite">
+                  <span class="turn-dot"></span>
+                  <strong id="turn-title">准备开始</strong>
+                  <span id="turn-detail"></span>
+                </div>
+
+                <div class="round-track" id="round-track" aria-label="本轮出牌顺序"></div>
+
+                <div class="revealed-cards hidden" id="revealed-strip">
+                  <span>本局明牌</span>
+                  <div id="revealed-list"></div>
+                </div>
+              </div>
+
+              <div class="self-zone">
+                <div class="self-info">
+                  <span class="self-avatar" id="self-avatar">🐼</span>
+                  <span class="self-name" id="self-name">我</span>
+                  <span class="self-count" id="self-count">0 张牌</span>
+                  <span class="self-turn-tag hidden" id="self-turn-tag">轮到您</span>
+                  <span class="self-leader-tag hidden" id="self-leader-tag">先手</span>
+                  <span class="self-place-tag hidden" id="self-place-tag">已出完</span>
+                  <button class="hand-sheet-btn" id="btn-hand-sheet" type="button">
+                    <span aria-hidden="true">☰</span> 整理手牌
+                  </button>
+                </div>
+                <div class="hand-scroll">
+                  <div class="hand" id="hand" role="group" aria-label="您的手牌"></div>
+                </div>
+              </div>
+
+              <div class="action-dock hidden" id="action-dock">
+                <div class="action-copy">
+                  <strong id="action-title">轮到你扣牌</strong>
+                  <span id="action-sub">选好牌，再猜大小</span>
+                </div>
+                <div class="action-buttons" id="action-buttons">
+                  <button class="btn btn-quiet" id="btn-hint" type="button">帮我找牌</button>
+                  <button class="btn btn-quiet pass-btn" id="btn-pass" type="button">过</button>
+                  <button class="btn btn-primary btn-play" id="btn-submit" type="button" disabled>
+                    扣牌
+                  </button>
+                </div>
+              </div>
+
+              <button class="chat-fab hidden" id="btn-chat" type="button" aria-label="和牌友打个招呼">
+                <span aria-hidden="true">💬</span>
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+    <div class="modal-root" id="modal-root"></div>
+    <div class="confetti-layer hidden" id="confetti-layer" aria-hidden="true"></div>
+
+    <noscript>
+      <div class="noscript">这个牌桌需要开启 JavaScript 才能使用。</div>
+    </noscript>
+  </body>
+</html>
