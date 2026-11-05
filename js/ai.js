@@ -15,6 +15,32 @@
 
 import { analyzeCombo, makeDeck, parseCard, sameComboShape } from './game.js';
 
+/* 新配牌策略会更多打出高牌，原来的“猜大”概率整体偏高；用 500 局结果压回来。 */
+const CLAIM_CALIBRATION = [
+  [0, 0.02],
+  [0.2, 0.05],
+  [0.4, 0.16],
+  [0.5, 0.26],
+  [0.6, 0.33],
+  [0.7, 0.43],
+  [0.8, 0.6],
+  [0.9, 0.82],
+  [1, 0.95]
+];
+
+function calibrateClaimChance(value) {
+  const p = Math.max(0, Math.min(1, value));
+  for (let i = 1; i < CLAIM_CALIBRATION.length; i += 1) {
+    const [x1, y1] = CLAIM_CALIBRATION[i - 1];
+    const [x2, y2] = CLAIM_CALIBRATION[i];
+    if (p <= x2) {
+      const t = (p - x1) / (x2 - x1 || 1);
+      return y1 + (y2 - y1) * t;
+    }
+  }
+  return CLAIM_CALIBRATION[CLAIM_CALIBRATION.length - 1][1];
+}
+
 function deckRankTotals(deckCount) {
   const totals = new Map();
   for (const id of makeDeck(deckCount)) {
@@ -297,7 +323,9 @@ export function estimateHigherChance(room, seat, combo, targetSeat = null) {
  * 保留两成随机偏差，避免电脑变成“算牌机器”。
  */
 export function chooseClaimDirection(room, seat, combo, rng = Math.random, targetSeat = null) {
-  const chance = estimateHigherChance(room, seat, combo, targetSeat);
+  const chance = calibrateClaimChance(
+    estimateHigherChance(room, seat, combo, targetSeat)
+  );
   const confidence = 0.5 + (chance - 0.5) * 0.8;
   return rng() < confidence ? 'higher' : 'lower';
 }
@@ -359,7 +387,7 @@ function orderPriorSeats(room, prior) {
 export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = Math.random) {
   const noisy = new Map();
   for (const target of prior) {
-    const chance = estimateHigherChance(room, seat, combo, target);
+    const chance = calibrateClaimChance(estimateHigherChance(room, seat, combo, target));
     const value = 0.5 + (chance - 0.5) * 0.8 + (rng() - 0.5) * 0.2;
     noisy.set(target, Math.max(0.02, Math.min(0.98, value)));
   }
@@ -393,12 +421,75 @@ export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = 
   return prior.map((target) => ({ target, dir: directions.get(target) }));
 }
 
-function scoreCandidate(room, seat, candidate, hand) {
+/**
+ * 估算“目标和自己点数相同”的概率。只对单张、对子、三张、多张有效；
+ * 连续牌型靠点数判断同点没有意义，返回 0。
+ */
+export function estimateEqualChance(room, seat, combo) {
+  if (!combo) return 0;
+  const counts = remainingRankCounts(room, seat);
+  if (combo.type === 'fullhouse') {
+    let total = 0;
+    let equal = 0;
+    for (const [rankValue, count] of counts) {
+      if (count < 3) continue;
+      total += 1;
+      if (rankValue === combo.key) equal += 1;
+    }
+    return total ? equal / total : 0;
+  }
+  if (!['single', 'pair', 'triple', 'multi'].includes(combo.type)) return 0;
+
+  const need = combo.type === 'single' ? 1 : combo.type === 'pair' ? 2 : combo.type === 'triple' ? 3 : combo.size;
+  let total = 0;
+  let equal = 0;
+  for (const [rankValue, count] of counts) {
+    if (count < need) continue;
+    total += count;
+    if (rankValue === combo.key) equal += count;
+  }
+  return total ? equal / total : 0;
+}
+
+function countIsolatedRanks(cards) {
+  const counts = new Map();
+  for (const id of cards) {
+    const card = parseCard(id);
+    if (!card) continue;
+    counts.set(card.rankValue, (counts.get(card.rankValue) || 0) + 1);
+  }
+  let isolated = 0;
+  for (const count of counts.values()) if (count === 1) isolated += 1;
+  return isolated;
+}
+
+function leadBonus(combo) {
+  if (!combo) return 0;
+  if (['triple', 'pairseq', 'steel'].includes(combo.type)) return 220;
+  if (combo.type === 'multi') return 180;
+  if (combo.type === 'straight') return 140;
+  if (combo.type === 'pair') return 50;
+  return 0;
+}
+
+function scoreCandidate(room, seat, candidate, hand, { isLeader, target }) {
   const played = new Set(candidate.cards);
   const remaining = hand.filter((id) => !played.has(id));
   const turns = estimateHandTurns(remaining);
-  // 手数越少越好；同手数时留下更少的牌更好；再同分时优先出小牌。
-  return turns * 1000 + remaining.length + candidate.combo.key * 0.01;
+  const chance = target
+    ? estimateHigherChance(room, seat, candidate.combo, null)
+    : 0.5;
+  const equalChance = target ? estimateEqualChance(room, seat, candidate.combo) : 0;
+
+  // 手数第一；同手数时保留更整的牌、避开中段没把握的报法、避开同点。
+  let score =
+    turns * 1000 +
+    remaining.length +
+    Math.abs(chance - 0.5) * 300 +
+    equalChance * 200 +
+    countIsolatedRanks(remaining) * 2;
+  if (isLeader) score -= leadBonus(candidate.combo);
+  return score;
 }
 
 export function chooseAIAction(room, seat, rng = Math.random) {
@@ -417,8 +508,11 @@ export function chooseAIAction(room, seat, rng = Math.random) {
   if (!candidates.length) return isLeader ? null : { kind: 'pass' };
 
   const scored = candidates
-    .map((candidate) => ({ ...candidate, score: scoreCandidate(room, seat, candidate, hand) }))
-    .sort((a, b) => a.score - b.score || a.combo.key - b.combo.key);
+    .map((candidate) => ({
+      ...candidate,
+      score: scoreCandidate(room, seat, candidate, hand, { isLeader, target })
+    }))
+    .sort((a, b) => a.score - b.score || b.combo.key - a.combo.key);
   const best = scored[0];
 
   if (isLeader) {

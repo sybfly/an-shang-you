@@ -23,6 +23,7 @@ import {
 import {
   chooseAIAction,
   chooseClaimDirection,
+  estimateEqualChance,
   estimateHandTurns,
   estimateHigherChance,
   remainingRankCounts
@@ -173,6 +174,34 @@ test('电脑跟牌：会为了保留三连对而拆掉一张单牌', () => {
   assert.deepEqual(action.cards, [cardId(0, 'D', 9)], '出掉 9，留下 3-5 三连对');
 });
 
+test('电脑配牌：先手优先留出更多手数的牌型', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 6)],
+      1: [cardId(0, 'S', 9), cardId(0, 'H', 9), cardId(0, 'C', 9), cardId(0, 'S', 3), cardId(0, 'H', 4)],
+      2: [cardId(0, 'C', 7)]
+    },
+    1
+  );
+  const action = chooseAIAction(room, 1, seeded(63));
+  assert.equal(action.kind, 'play');
+  assert.equal(action.cards.length, 3, '同手数时优先出三张，而不是单张');
+  assert.equal(analyzeCombo(action.cards).combo.type, 'triple');
+});
+
+test('电脑配牌：会估算与目标同点的风险', () => {
+  const room = makeAIRoom();
+  room.deckInfo = { deckCount: 1, handSize: 18, revealedCount: 0, totalCards: 54 };
+  room.hands[1] = [cardId(0, 'S', 10), cardId(0, 'H', 10)];
+  room.publicCards = [];
+  room.revealed = [];
+  const pair = analyzeCombo(room.hands[1]).combo;
+  const sameRank = estimateEqualChance(room, 1, pair);
+  assert.ok(sameRank > 0, '外面还有两张 10，应该有同点风险');
+});
+
 test('电脑报大小不会和前面的报法自相矛盾', () => {
   const room = makeAIRoom();
   seatTable(
@@ -305,7 +334,7 @@ test('加电脑：占座、可开局、最多六人', () => {
   assert.equal(addAI(room).ok, false, '第七位不能再加');
 });
 
-test('电脑先手：打出手里最小的单牌', () => {
+test('电脑先手：手里只有单张时也会正常出牌', () => {
   const room = makeAIRoom();
   seatTable(
     room,
@@ -318,7 +347,7 @@ test('电脑先手：打出手里最小的单牌', () => {
   );
   const action = chooseAIAction(room, 1, seeded(1));
   assert.equal(action.kind, 'play');
-  assert.deepEqual(action.cards, [cardId(0, 'S', 5)]);
+  assert.equal(action.cards.length, 1);
   assert.deepEqual(action.claims, []);
 });
 
