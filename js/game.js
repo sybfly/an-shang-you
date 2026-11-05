@@ -530,6 +530,7 @@ export function createRoom({
     gameNo: 0,
     scoredGame: -1,
     lastGameScores: {},
+    publicCards: [],
     seq: 1,
     deckInfo: null,
     lastEvent: null,
@@ -651,6 +652,66 @@ export function startHint(room) {
    开局 / 轮次
    -------------------------------------------------------------------------- */
 
+/**
+ * 检查一局发牌是否合规：
+ * 人数对应的副数、每人手牌数、明牌数、总牌数都对，且没有重复牌。
+ * 发牌异常时返回 ok:false，调用方不应开始牌局。
+ */
+export function validateDeal(room) {
+  const seats = occupiedSeats(room);
+  const count = seats.length;
+  const deckCount = DECK_COUNT_BY_PLAYERS[count];
+  const perHand = HAND_SIZE_BY_PLAYERS[count];
+  const revealedCount = REVEALED_BY_PLAYERS[count];
+  if (!deckCount || !perHand) {
+    return { ok: false, message: '人数不对，无法配牌' };
+  }
+  const info = room.deckInfo;
+  if (
+    !info ||
+    info.deckCount !== deckCount ||
+    info.handSize !== perHand ||
+    info.revealedCount !== revealedCount ||
+    info.totalCards !== deckCount * 54
+  ) {
+    return { ok: false, message: '牌副数和人数不匹配' };
+  }
+
+  const seen = new Set();
+  const addCard = (id) => {
+    const card = parseCard(id);
+    if (!card) return `有一张牌认不出来：${id}`;
+    if (card.deck >= deckCount) return `牌号超出副数：${id}`;
+    if (seen.has(id)) return `同一张牌出现了两次：${id}`;
+    seen.add(id);
+    return null;
+  };
+
+  for (const seat of seats) {
+    const hand = room.hands[seat];
+    if (!Array.isArray(hand) || hand.length !== perHand) {
+      return { ok: false, message: `座位 ${seat} 的手牌数量不对` };
+    }
+    for (const id of hand) {
+      const error = addCard(id);
+      if (error) return { ok: false, message: error };
+    }
+  }
+
+  if (!Array.isArray(room.revealed) || room.revealed.length !== revealedCount) {
+    return { ok: false, message: '明牌数量不对' };
+  }
+  for (const id of room.revealed) {
+    const error = addCard(id);
+    if (error) return { ok: false, message: error };
+  }
+
+  if (seen.size !== deckCount * 54) {
+    return { ok: false, message: '牌没有发完，或者多出了牌' };
+  }
+  return { ok: true, message: '配牌正常', totalCards: seen.size };
+}
+
 export function startGame(room, rng = Math.random) {
   if (room.phase !== 'lobby' && room.phase !== 'gameOver') {
     return { ok: false, error: 'NOT_READY', message: '现在还不能重新开局' };
@@ -695,6 +756,11 @@ export function startGame(room, rng = Math.random) {
     revealedCount: revealed.length,
     totalCards: deckCount * 54
   };
+  room.publicCards = [];
+  const dealCheck = validateDeal(room);
+  if (!dealCheck.ok) {
+    return fail('BAD_DEAL', dealCheck.message);
+  }
   room.actions = {};
   room.turnOrder = [];
   room.turnIndex = 0;
@@ -1010,6 +1076,15 @@ export function resolveRound(room) {
     }
   }
 
+  if (actions.some((action) => action.played)) {
+    const publicCards = new Set(room.publicCards || []);
+    for (const action of actions) {
+      if (!action.played) continue;
+      for (const id of action.cards) publicCards.add(id);
+    }
+    room.publicCards = [...publicCards];
+  }
+
   const emptied = actions
     .filter(
       (action) =>
@@ -1132,6 +1207,7 @@ export function resetToLobby(room) {
   room.finished = [];
   room.ranking = [];
   room.deckInfo = null;
+  room.publicCards = [];
   room.lastEvent = null;
   for (const player of room.seats.filter(Boolean)) {
     player.auto = false;

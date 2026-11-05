@@ -3,19 +3,29 @@ import assert from 'node:assert/strict';
 import {
   addAI,
   addPlayer,
+  analyzeCombo,
   buildSnapshot,
   canStart,
   cardId,
   continueRound,
   createRoom,
+  makeDeck,
+  jokerId,
+  parseCard,
   passTurn,
   playCards,
   resetScores,
   resetToLobby,
   sortHand,
-  startGame
+  startGame,
+  validateDeal
 } from '../js/game.js';
-import { chooseAIAction } from '../js/ai.js';
+import {
+  chooseAIAction,
+  chooseClaimDirection,
+  estimateHigherChance,
+  remainingRankCounts
+} from '../js/ai.js';
 
 function seeded(seed = 42) {
   let value = seed >>> 0;
@@ -69,6 +79,76 @@ function finishThreePlayerGame(room, rng) {
   playCards(room, 1, [cardId(0, 'H', 9)], [{ target: 0, dir: 'higher' }]);
   passTurn(room, 2);
 }
+
+function comboOfOne(id) {
+  const result = analyzeCombo([id]);
+  assert.equal(result.valid, true, result.reason);
+  return result.combo;
+}
+
+test('开局配牌：3～6 人的副数、手牌数、明牌数都合规', () => {
+  for (let count = 3; count <= 6; count += 1) {
+    const room = createRoom({ hostName: '房主' });
+    for (let seat = 1; seat < count; seat += 1) {
+      addPlayer(room, { name: `牌友${seat}`, token: `t${seat}`, peerId: `p${seat}` });
+    }
+    const started = startGame(room, seeded(30 + count));
+    assert.equal(started.ok, true, started.message);
+    const check = validateDeal(room);
+    assert.equal(check.ok, true, check.message);
+    assert.equal(room.deckInfo.deckCount, count === 3 ? 1 : count === 6 ? 3 : 2);
+    assert.equal(room.revealed.length, count === 5 ? 3 : 0);
+  }
+
+  const room = createRoom({ hostName: '房主' });
+  addPlayer(room, { name: '牌友一', token: 't1', peerId: 'p1' });
+  addPlayer(room, { name: '牌友二', token: 't2', peerId: 'p2' });
+  startGame(room, seeded(41));
+  room.hands[0].push(room.hands[0][0]);
+  assert.equal(validateDeal(room).ok, false, '重复牌应当被判为配牌异常');
+});
+
+test('电脑记牌：公开出牌后，没见过的牌会减少', () => {
+  const room = makeTable();
+  finishThreePlayerGame(room, seeded(51));
+  assert.equal(room.phase, 'gameOver');
+  for (const id of [cardId(0, 'S', 7), cardId(0, 'H', 9)]) {
+    assert.ok(room.publicCards.includes(id), `${id} 应该进入公开牌池`);
+  }
+  const counts = remainingRankCounts(room, 0);
+  const total = [...counts.values()].reduce((sum, value) => sum + value, 0);
+  assert.equal(total, 52, '54 张牌减去 2 张公开牌，还剩 52 张没见过');
+});
+
+test('电脑推理：牌型越高越敢猜大，公开高牌后会更有把握', () => {
+  const room = makeAIRoom();
+  room.deckInfo = { deckCount: 1, handSize: 18, revealedCount: 0, totalCards: 54 };
+  room.publicCards = [];
+  room.revealed = [];
+
+  room.hands[1] = [jokerId(0, true)];
+  const high = comboOfOne(jokerId(0, true));
+  const highChance = estimateHigherChance(room, 1, high);
+
+  room.hands[1] = [cardId(0, 'S', 3)];
+  const low = comboOfOne(cardId(0, 'S', 3));
+  const lowChance = estimateHigherChance(room, 1, low);
+
+  room.hands[1] = [cardId(0, 'S', 10)];
+  const mid = comboOfOne(cardId(0, 'S', 10));
+  const midChance = estimateHigherChance(room, 1, mid);
+
+  assert.ok(highChance > 0.9, `大的牌应该敢猜大，实际 ${highChance}`);
+  assert.ok(lowChance < 0.1, `小的牌应该不敢猜大，实际 ${lowChance}`);
+  assert.ok(midChance > lowChance && midChance < highChance);
+
+  room.publicCards = makeDeck(1).filter((id) => parseCard(id).rankValue > 10);
+  const afterSeenHigh = estimateHigherChance(room, 1, mid);
+  assert.ok(afterSeenHigh > midChance, '高牌都露过面后，中等牌更有把握猜大');
+
+  assert.equal(chooseClaimDirection(room, 1, high, () => 0.1), 'higher');
+  assert.equal(chooseClaimDirection(room, 1, low, () => 0.9), 'lower');
+});
 
 test('加电脑：占座、可开局、最多六人', () => {
   const room = createRoom({ hostName: '房主' });
