@@ -22,10 +22,10 @@ const CLAIM_CALIBRATION = [
   [0.4, 0.16],
   [0.5, 0.26],
   [0.6, 0.33],
-  [0.7, 0.43],
-  [0.8, 0.6],
-  [0.9, 0.82],
-  [1, 0.95]
+  [0.7, 0.45],
+  [0.8, 0.8],
+  [0.9, 0.9],
+  [1, 0.97]
 ];
 
 function calibrateClaimChance(value) {
@@ -72,8 +72,7 @@ export function remainingRankCounts(room, seat) {
   return totals;
 }
 
-function sequenceRankValues(start, length) {
-  const values = [];
+function sequenceRankValues(start, length) {  const values = [];
   for (let value = start; value < start + length; value += 1) {
     values.push(value === 1 ? 14 : value === 2 ? 15 : value === 14 ? 14 : value);
   }
@@ -275,6 +274,21 @@ function groupFits(combo, count) {
   return count >= 1;
 }
 
+/**
+ * 同牌型点数的上下界。到了上界就不可能再“更大”，到了下界就不可能“更小”。
+ * 例如 AAKKQQ 的三连对已经是 A 高，不可能有比它更大的三连对。
+ */
+function comboKeyBounds(combo) {
+  if (!combo) return { min: null, max: null };
+  if (['single', 'pair', 'triple', 'fullhouse', 'multi'].includes(combo.type)) {
+    return { min: 3, max: 17 };
+  }
+  if (['straight', 'pairseq', 'steel'].includes(combo.type)) {
+    return { min: 5, max: 14 };
+  }
+  return { min: null, max: null };
+}
+
 function targetPlayedBias(room, targetSeat, combo) {
   if (targetSeat == null || !combo) return 0;
   const plays = (room.publicPlays || []).filter(
@@ -385,10 +399,19 @@ function orderPriorSeats(room, prior) {
  * 这里枚举所有“切点”，选概率最高的那一种。
  */
 export function chooseConsistentClaimDirections(room, seat, combo, prior, rng = Math.random) {
+  const bounds = comboKeyBounds(combo);
+  if (bounds.max != null && combo.key >= bounds.max) {
+    return prior.map((target) => ({ target, dir: 'higher' }));
+  }
+  if (bounds.min != null && combo.key <= bounds.min) {
+    return prior.map((target) => ({ target, dir: 'lower' }));
+  }
+
   const noisy = new Map();
   for (const target of prior) {
     const chance = calibrateClaimChance(estimateHigherChance(room, seat, combo, target));
-    const value = 0.5 + (chance - 0.5) * 0.8 + (rng() - 0.5) * 0.2;
+    const uncertainty = 1 - Math.abs(chance - 0.5) * 2;
+    const value = chance + (rng() - 0.5) * 0.12 * uncertainty;
     noisy.set(target, Math.max(0.02, Math.min(0.98, value)));
   }
 

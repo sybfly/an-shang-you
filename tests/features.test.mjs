@@ -202,6 +202,46 @@ test('电脑配牌：会估算与目标同点的风险', () => {
   assert.ok(sameRank > 0, '外面还有两张 10，应该有同点风险');
 });
 
+test('电脑不会把同牌型里的最大点数猜小', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [
+        cardId(0, 'S', 7),
+        cardId(0, 'H', 7),
+        cardId(0, 'S', 6),
+        cardId(0, 'H', 6),
+        cardId(0, 'S', 5),
+        cardId(0, 'H', 5)
+      ],
+      1: [
+        cardId(0, 'S', 1),
+        cardId(0, 'H', 1),
+        cardId(0, 'S', 13),
+        cardId(0, 'H', 13),
+        cardId(0, 'S', 12),
+        cardId(0, 'H', 12)
+      ],
+      2: [cardId(0, 'C', 9)]
+    },
+    0
+  );
+  playCards(room, 0, [
+    cardId(0, 'S', 7),
+    cardId(0, 'H', 7),
+    cardId(0, 'S', 6),
+    cardId(0, 'H', 6),
+    cardId(0, 'S', 5),
+    cardId(0, 'H', 5)
+  ]);
+  const action = chooseAIAction(room, 1, () => 0.99);
+  assert.equal(action.kind, 'play');
+  assert.equal(analyzeCombo(action.cards).combo.type, 'pairseq');
+  assert.equal(analyzeCombo(action.cards).combo.key, 14);
+  assert.deepEqual(action.claims, [{ target: 0, dir: 'higher' }]);
+});
+
 test('电脑报大小不会和前面的报法自相矛盾', () => {
   const room = makeAIRoom();
   seatTable(
