@@ -330,6 +330,46 @@ test('电脑会分别报“比一个人大、比另一个人小”', () => {
   assert.deepEqual(dirs, ['higher', 'lower'], '应该比小虎大、比小兔小');
 });
 
+test('电脑残局会用大牌抢回牌权', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 6)],
+      1: [jokerId(0, true), cardId(0, 'S', 3)],
+      2: [cardId(0, 'C', 7)]
+    },
+    1
+  );
+  const action = chooseAIAction(room, 1, () => 0.1);
+  assert.deepEqual(action.cards, [jokerId(0, true)]);
+});
+
+test('电脑出牌不是每次都一样', () => {
+  const room = makeAIRoom();
+  seatTable(
+    room,
+    {
+      0: [cardId(0, 'S', 4)],
+      1: [
+        cardId(0, 'S', 3),
+        cardId(0, 'S', 5),
+        cardId(0, 'S', 7),
+        cardId(0, 'S', 9),
+        cardId(0, 'S', 11)
+      ],
+      2: [cardId(0, 'C', 10)]
+    },
+    1
+  );
+  const picks = new Set();
+  for (let seed = 1; seed <= 30; seed += 1) {
+    const action = chooseAIAction(room, 1, seeded(seed));
+    picks.add(action.cards[0]);
+  }
+  assert.ok(picks.size > 1, '多个随机种子下应该出现不同单张');
+});
+
 test('电脑报大小不会和前面的报法自相矛盾', () => {
   const room = makeAIRoom();
   seatTable(

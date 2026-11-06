@@ -589,6 +589,37 @@ function leadBonus(combo) {
   return 0;
 }
 
+function highCardPenalty(cards, relaxed) {
+  if (relaxed) return 0;
+  let penalty = 0;
+  for (const id of cards) {
+    const card = parseCard(id);
+    if (!card) continue;
+    if (card.rankValue >= 17) penalty += 40;
+    else if (card.rankValue === 16) penalty += 30;
+    else if (card.rankValue === 15) penalty += 20;
+    else if (card.rankValue === 14) penalty += 10;
+    else if (card.rankValue === 13) penalty += 4;
+  }
+  return penalty;
+}
+
+function pickCandidate(scored, isLeader, rng) {
+  const threshold = isLeader ? 80 : 40;
+  const pool = scored
+    .filter((candidate) => candidate.score <= scored[0].score + threshold)
+    .slice(0, 3);
+  if (pool.length === 1) return pool[0];
+  const weights = [1, 0.18, 0.06].slice(0, pool.length);
+  const total = weights.reduce((sum, weight) => sum + weight, 0);
+  let roll = rng() * total;
+  for (let i = 0; i < pool.length; i += 1) {
+    roll -= weights[i];
+    if (roll <= 0) return pool[i];
+  }
+  return pool[0];
+}
+
 function scoreCandidate(room, seat, candidate, hand, { isLeader, target }) {
   const played = new Set(candidate.cards);
   const remaining = hand.filter((id) => !played.has(id));
@@ -598,13 +629,23 @@ function scoreCandidate(room, seat, candidate, hand, { isLeader, target }) {
     : 0.5;
   const equalChance = target ? estimateEqualChance(room, seat, candidate.combo) : 0;
 
+  const opponents = room.seats
+    .map((player, index) => (player && index !== seat ? room.hands[index]?.length || 0 : 0))
+    .filter((count) => count > 0);
+  const mustContest = opponents.some((count) => count <= 2);
+  const endgame = hand.length <= 6 || remaining.length <= 3;
+  const relaxed = endgame || mustContest;
+
   // 手数第一；同手数时保留更整的牌、避开中段没把握的报法、避开同点。
   let score =
     turns * 1000 +
     remaining.length +
     Math.abs(chance - 0.5) * 300 +
     equalChance * 200 +
-    countIsolatedRanks(remaining) * 2;
+    countIsolatedRanks(remaining) * 2 +
+    highCardPenalty(candidate.cards, relaxed);
+  // 平时尽量留着大牌；残局或对手快出完时，大牌用来抢回牌权。
+  if (relaxed) score -= candidate.combo.key * 2;
   if (isLeader) score -= leadBonus(candidate.combo);
   return score;
 }
@@ -627,10 +668,12 @@ export function chooseAIAction(room, seat, rng = Math.random) {
   const scored = candidates
     .map((candidate) => ({
       ...candidate,
-      score: scoreCandidate(room, seat, candidate, hand, { isLeader, target })
+      score:
+        scoreCandidate(room, seat, candidate, hand, { isLeader, target }) +
+        (isLeader ? (rng() - 0.5) * 10 : 0)
     }))
-    .sort((a, b) => a.score - b.score || b.combo.key - a.combo.key);
-  const best = scored[0];
+    .sort((a, b) => a.score - b.score);
+  const best = isLeader ? pickCandidate(scored, true, rng) : scored[0];
 
   if (isLeader) {
     return { kind: 'play', cards: best.cards, claims: [] };
