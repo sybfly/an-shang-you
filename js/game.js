@@ -21,7 +21,7 @@ export const DECK_COUNT_BY_PLAYERS = { 3: 1, 4: 2, 5: 2, 6: 3 };
 export const HAND_SIZE_BY_PLAYERS = { 3: 18, 4: 27, 5: 21, 6: 27 };
 export const REVEALED_BY_PLAYERS = { 3: 0, 4: 0, 5: 3, 6: 0 };
 
-export const CHAT_PHRASES = ['大家好', '好牌！', '慢慢来', '谢谢'];
+export const CHAT_PHRASES = ['大家好', '好牌！', '打得漂亮', '谢谢'];
 
 export const RANK_LABELS = {
   1: 'A',
@@ -619,6 +619,66 @@ export function updateConnection(room, seat, connected) {
 export function findReconnectSeat(room, token) {
   if (!token) return -1;
   return room.seats.findIndex((p) => p && !p.isAI && p.token && p.token === token);
+}
+
+/**
+ * 找出「已经掉线、昵称相同」的座位。
+ * 只要桌上有人的昵称和掉线者一致，不管他带没带凭证，都要先经房主同意。
+ */
+export function findDroppedSeatByName(room, name) {
+  const target = cleanName(name, '').toLowerCase();
+  if (!target) return -1;
+  return room.seats.findIndex(
+    (player) =>
+      player &&
+      !player.isAI &&
+      !player.connected &&
+      player.name.toLowerCase() === target
+  );
+}
+
+/**
+ * 房主收到入座请求时的判定，纯函数，便于测试。
+ * 返回 action：approve（要审批）/ reconnect（本人重连）/ join（正常入座）/ reject（拒绝）
+ */
+export function prepareJoin(room, { name, token } = {}) {
+  const droppedSeat = findDroppedSeatByName(room, name);
+  if (droppedSeat >= 0) {
+    return {
+      action: 'approve',
+      seat: droppedSeat,
+      name: room.seats[droppedSeat].name,
+      verified: findReconnectSeat(room, token) === droppedSeat
+    };
+  }
+
+  const tokenSeat = findReconnectSeat(room, token);
+  if (tokenSeat >= 0) return { action: 'reconnect', seat: tokenSeat };
+
+  if (room.phase !== 'lobby') {
+    return {
+      action: 'reject',
+      code: 'PLAYING',
+      message: '牌局已经开始，等这一局结束再来吧'
+    };
+  }
+
+  return { action: 'join' };
+}
+
+/**
+ * 房主同意后，把掉线的座位交给新来的连接。
+ * 本人重连（凭证一致）保留原凭证；其他人接手则换发新凭证，
+ * 免得旧凭证还能再次占用这个座位。
+ */
+export function takeOverSeat(room, seat, { peerId = null, token = '' } = {}) {
+  const player = room.seats[seat];
+  if (!player) return { ok: false, error: 'NO_PLAYER', message: '这个座位已经不在了' };
+  const sameOwner = Boolean(token) && player.token === token;
+  player.peerId = peerId || null;
+  if (!sameOwner) player.token = randomToken();
+  updateConnection(room, seat, true);
+  return { ok: true, player, token: player.token, keptToken: sameOwner };
 }
 
 export function canStart(room) {

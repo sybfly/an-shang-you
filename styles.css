@@ -1,6 +1,6 @@
 /* ==========================================================================
    暗上游 · 视觉系统
-   老木桌 + 墨绿绒布 + 米白纸牌；大字、慢节奏、老人友好。
+   老木桌 + 墨绿绒布 + 米白纸牌；字大、层次清楚，谁坐下都能看清。
    ========================================================================== */
 
 :root {
@@ -3530,6 +3530,72 @@ button.pcard.is-playable:hover {
   border-color: rgba(239, 196, 94, 0.55);
   background: rgba(54, 45, 20, 0.96);
   color: #fff3d2;
+}
+
+/* 入座申请：房主确认同名掉线玩家 */
+
+.join-request {
+  position: fixed;
+  z-index: 170;
+  top: calc(var(--topbar-h) + 10px);
+  left: 50%;
+  width: min(560px, calc(100% - 24px));
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(239, 196, 94, 0.55);
+  border-radius: var(--radius-md);
+  background: var(--cream);
+  box-shadow: var(--shadow-lg);
+  color: var(--ink);
+  transform: translateX(-50%);
+  animation: toast-in 220ms ease both;
+}
+
+.jr-body {
+  display: flex;
+  flex: 1 1 280px;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.jr-badge {
+  color: var(--gold-deep);
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.jr-text {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.5;
+}
+
+.jr-text strong {
+  color: var(--ink);
+}
+
+.jr-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+@media (max-width: 560px) {
+  .join-request {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .jr-actions {
+    justify-content: flex-end;
+  }
 }
 
 /* 彩纸 */

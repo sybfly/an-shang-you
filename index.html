@@ -6,14 +6,14 @@
     <meta name="theme-color" content="#153f30" />
     <meta
       name="description"
-      content="暗上游：三人起局的暗牌猜大小扑克。大字、慢节奏，亲友浏览器点对点同桌，不设游戏服务器。"
+      content="暗上游：三人起局的暗牌猜大小扑克。浏览器点对点同桌，不设游戏服务器，不保存牌局。"
     />
-    <title>暗上游 · 乐龄牌桌</title>
+    <title>暗上游 · 暗牌扑克</title>
     <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
     <link rel="manifest" href="manifest.webmanifest" />
-    <link rel="stylesheet" href="styles.css?v=20261105-9" />
-    <script src="vendor/peerjs.min.js?v=20261105-9" defer></script>
-    <script type="module" src="js/app.js?v=20261105-9"></script>
+    <link rel="stylesheet" href="styles.css?v=20261107-1" />
+    <script src="vendor/peerjs.min.js?v=20261107-1" defer></script>
+    <script type="module" src="js/app.js?v=20261107-1"></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">跳到主要内容</a>
@@ -24,7 +24,7 @@
           <span class="brand-mark" aria-hidden="true"><span>暗</span></span>
           <span class="brand-copy">
             <strong>暗上游</strong>
-            <small>扣牌猜大小 · 老友同桌</small>
+            <small>扣牌猜大小 · 三人起局</small>
           </span>
         </button>
 
@@ -90,7 +90,7 @@
                     type="text"
                     maxlength="8"
                     autocomplete="nickname"
-                    placeholder="例如：王阿姨"
+                    placeholder="例如：小林"
                   />
                 </span>
               </label>
@@ -311,6 +311,7 @@
     </div>
 
     <div class="toast-stack" id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+    <div class="join-request hidden" id="join-request" role="alertdialog" aria-live="assertive" aria-label="入座申请"></div>
     <div class="modal-root" id="modal-root"></div>
     <div class="confetti-layer hidden" id="confetti-layer" aria-hidden="true"></div>
 

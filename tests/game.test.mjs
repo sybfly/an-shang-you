@@ -5,6 +5,7 @@ import {
   HAND_SIZE_BY_PLAYERS,
   MAX_PLAYERS,
   MIN_PLAYERS,
+  addAI,
   addPlayer,
   analyzeCombo,
   buildSnapshot,
@@ -13,16 +14,19 @@ import {
   cardLabel,
   continueRound,
   createRoom,
+  findDroppedSeatByName,
   findPlayableCombo,
   findReconnectSeat,
   jokerId,
   occupiedSeats,
   passTurn,
   playCards,
+  prepareJoin,
   resetToLobby,
   sortHand,
   startGame,
   startHint,
+  takeOverSeat,
   updateConnection
 } from '../js/game.js';
 
@@ -616,4 +620,81 @@ test('牌型比较只发生在同牌型内', () => {
   assert.notEqual(pair.type, 'multi');
   assert.equal(cardLabel(cardId(0, 'S', 1), true), '黑桃A');
   assert.equal(cardLabel(jokerId(0, true)), '大王');
+});
+
+/* --------------------------------------------------------------------------
+   掉线后同名玩家入座：必须房主审批
+   -------------------------------------------------------------------------- */
+
+test('同名掉线座位：只有掉线且非电脑的座位算数', () => {
+  const room = makeTable(3);
+  assert.equal(findDroppedSeatByName(room, '牌友1'), -1, '在线时不算掉线');
+
+  updateConnection(room, 1, false);
+  assert.equal(findDroppedSeatByName(room, '牌友1'), 1);
+  assert.equal(findDroppedSeatByName(room, ' 牌友1 '), 1, '前后空格不影响匹配');
+  assert.equal(findDroppedSeatByName(room, '牌友2'), -1, '别人还在线');
+  assert.equal(findDroppedSeatByName(room, ''), -1);
+
+  addAI(room);
+  const aiSeat = room.seats.findIndex((p) => p?.isAI);
+  assert.ok(aiSeat > 0);
+  updateConnection(room, aiSeat, false);
+  assert.equal(findDroppedSeatByName(room, room.seats[aiSeat].name), -1, '电脑不算玩家');
+});
+
+test('入座判定：同名玩家想坐回掉线位置时交给房主审批', () => {
+  const room = makeTable(3);
+  updateConnection(room, 1, false);
+
+  const byName = prepareJoin(room, { name: '牌友1', token: 'someone-else' });
+  assert.equal(byName.action, 'approve');
+  assert.equal(byName.seat, 1);
+  assert.equal(byName.verified, false, '凭证对不上，需要房主分辨');
+
+  const byToken = prepareJoin(room, { name: '牌友1', token: 'token-1' });
+  assert.equal(byToken.action, 'approve', '带原凭证也要先问房主');
+  assert.equal(byToken.verified, true);
+
+  // 牌局进行中也照样可以申请，只是要先审批
+  startGame(room, seeded(77));
+  updateConnection(room, 1, false);
+  assert.equal(prepareJoin(room, { name: '牌友1', token: 'x' }).action, 'approve');
+});
+
+test('入座判定：不带同名、且牌局已开始，仍然拒绝', () => {
+  const room = makeTable(3);
+  startGame(room, seeded(78));
+  const decision = prepareJoin(room, { name: '新来的', token: 'fresh' });
+  assert.equal(decision.action, 'reject');
+  assert.equal(decision.code, 'PLAYING');
+});
+
+test('入座判定：在线座位用凭证回来直接放行，正常新玩家在大厅入座', () => {
+  const room = makeTable(3);
+  assert.equal(prepareJoin(room, { name: '随便填的昵称', token: 'token-2' }).action, 'reconnect');
+  assert.equal(prepareJoin(room, { name: '新来的', token: 'fresh' }).action, 'join');
+});
+
+test('房主同意后接管掉线座位：本人保留凭证，他人换发新凭证', () => {
+  const room = makeTable(3);
+  updateConnection(room, 1, false);
+  const oldToken = room.seats[1].token;
+
+  const same = takeOverSeat(room, 1, { peerId: 'peer-1b', token: oldToken });
+  assert.equal(same.ok, true);
+  assert.equal(same.keptToken, true);
+  assert.equal(room.seats[1].token, oldToken);
+  assert.equal(room.seats[1].connected, true);
+  assert.equal(room.seats[1].peerId, 'peer-1b');
+  assert.equal(room.seats[1].auto, false);
+
+  updateConnection(room, 1, false);
+  const other = takeOverSeat(room, 1, { peerId: 'peer-x', token: 'not-the-token' });
+  assert.equal(other.ok, true);
+  assert.equal(other.keptToken, false);
+  assert.notEqual(room.seats[1].token, oldToken, '换人接手要收回旧凭证');
+  assert.equal(room.seats[1].connected, true);
+
+  assert.equal(takeOverSeat(room, 5, { peerId: 'x', token: 'y' }).ok, false);
 });

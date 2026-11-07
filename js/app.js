@@ -10,10 +10,10 @@ import {
   continueRound,
   createRoom,
   findPlayableCombo,
-  findReconnectSeat,
   parseCard,
   passTurn,
   playCards,
+  prepareJoin,
   randomToken,
   removeSeat,
   resetScores,
@@ -21,12 +21,14 @@ import {
   sameComboShape,
   sortHand,
   startGame,
+  takeOverSeat,
   updateConnection
 } from './game.js';
 import { chooseAIAction } from './ai.js';
 import {
   PeerGuest,
   PeerHost,
+  PROTOCOL_VERSION,
   friendlyPeerError,
   makeRoomCode
 } from './net.js';
@@ -77,6 +79,8 @@ const app = {
   hostStatus: 'idle',
   guestStatus: 'idle',
   joinToken: null,
+  joinRequests: [],
+  activeJoinRequest: null,
   actionPending: false,
   handSheetOpen: false,
   aiTimer: null,
@@ -107,7 +111,7 @@ function formatCode(code) {
 
 function getName() {
   const input = $('#input-name');
-  const name = cleanName(input?.value || app.name || '老友', '老友');
+  const name = cleanName(input?.value || app.name || '牌友', '牌友');
   if (input) input.value = name;
   app.name = name;
   try {
@@ -430,7 +434,7 @@ function openSettings() {
 
   openModal(
     `<p class="modal-eyebrow">牌桌设置</p>
-     <h2>看得清，玩得慢</h2>
+     <h2>看得清，用着顺手</h2>
      <div class="settings-group">
        <div class="settings-label"><span>文字大小</span><span class="settings-hint">字和按钮一起变大</span></div>
        <div class="font-options">${fontOptions}</div>
@@ -481,6 +485,7 @@ function showScreen(name) {
 
 function goHome() {
   clearAITimer();
+  cancelJoinRequests();
   closePeers();
   app.mode = null;
   app.room = null;
@@ -1199,31 +1204,139 @@ function applySnapshot(snapshot) {
    联机：房主
    -------------------------------------------------------------------------- */
 
-function hostAcceptJoin({ peerId, token, name }) {
+/* --------------------------------------------------------------------------
+   入座审批：昵称和掉线的人重名时，先问房主
+   -------------------------------------------------------------------------- */
+
+const JOIN_APPROVAL_TIMEOUT = 60000;
+
+function renderJoinRequest() {
+  const el = $('#join-request');
+  if (!el) return;
+  const entry = app.activeJoinRequest;
+  if (!entry) {
+    el.classList.add('hidden');
+    el.innerHTML = '';
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = `
+    <div class="jr-body">
+      <span class="jr-badge">入座申请</span>
+      <p class="jr-text">
+        <strong>${escapeHtml(entry.name)}</strong> 想坐回原来的位置。
+        刚才掉线的就是这个名字，${
+          entry.verified ? '凭证也对得上，确认是本人就放行。' : '没有带上原来的凭证，请确认是不是同一个人。'
+        }
+      </p>
+    </div>
+    <div class="jr-actions">
+      <button class="btn btn-small btn-soft" type="button" data-action="deny-join">不让进</button>
+      <button class="btn btn-small btn-primary" type="button" data-action="allow-join">同意入座</button>
+    </div>`;
+}
+
+function showNextJoinRequest() {
+  if (app.activeJoinRequest) {
+    renderJoinRequest();
+    return;
+  }
+  const next = app.joinRequests.find((item) => !item.settled);
+  if (!next) {
+    renderJoinRequest();
+    return;
+  }
+  app.activeJoinRequest = next;
+  renderJoinRequest();
+}
+
+function settleJoinRequest(entry, approved) {
+  if (!entry || entry.settled) return;
+  entry.settled = true;
+  clearTimeout(entry.timer);
+  const index = app.joinRequests.indexOf(entry);
+  if (index >= 0) app.joinRequests.splice(index, 1);
+  if (app.activeJoinRequest === entry) app.activeJoinRequest = null;
+  entry.resolve(Boolean(approved));
+  showNextJoinRequest();
+}
+
+function requestJoinApproval({ seat, name, verified }) {
+  return new Promise((resolve) => {
+    const entry = { seat, name, verified, resolve, settled: false, timer: null };
+    entry.timer = setTimeout(() => {
+      settleJoinRequest(entry, false);
+    }, JOIN_APPROVAL_TIMEOUT);
+    app.joinRequests.push(entry);
+    showNextJoinRequest();
+  });
+}
+
+function cancelJoinRequests() {
+  for (const entry of [...app.joinRequests]) settleJoinRequest(entry, false);
+  app.joinRequests = [];
+  app.activeJoinRequest = null;
+  renderJoinRequest();
+}
+
+async function hostAcceptJoin({ peerId, token, name, conn }) {
   const room = app.room;
   if (!room) return { ok: false, message: '牌桌还没有准备好' };
 
-  if (token) {
-    const existing = findReconnectSeat(room, token);
-    if (existing >= 0) {
-      updateConnection(room, existing, true);
-      room.seats[existing].peerId = peerId;
-      return {
-        ok: true,
-        seat: existing,
-        token,
-        reconnected: true,
-        name: room.seats[existing].name
-      };
+  const decision = prepareJoin(room, { name, token });
+
+  if (decision.action === 'approve') {
+    // 桌上有同名的人掉线了：先扣住连接，等房主点头。
+    try {
+      conn?.send({
+        type: 'pending',
+        message: '房主正在确认你的座位，请稍等一下',
+        protocol: PROTOCOL_VERSION
+      });
+    } catch {
+      /* ignore */
     }
+
+    const approved = await requestJoinApproval({
+      seat: decision.seat,
+      name: decision.name,
+      verified: decision.verified
+    });
+    if (!approved) {
+      return { ok: false, code: 'HOST_DENIED', message: '房主没有同意这次入座' };
+    }
+    if (conn && conn.open === false) {
+      return { ok: false, code: 'CONNECTION_GONE', message: '连接已经断开，请重新进入' };
+    }
+
+    const taken = takeOverSeat(room, decision.seat, { peerId, token });
+    if (!taken.ok) {
+      return { ok: false, code: taken.error, message: taken.message || '这个座位已经不能用了' };
+    }
+    return {
+      ok: true,
+      seat: decision.seat,
+      token: taken.token,
+      reconnected: true,
+      approved: true,
+      name: taken.player.name
+    };
   }
 
-  if (room.phase !== 'lobby') {
+  if (decision.action === 'reconnect') {
+    updateConnection(room, decision.seat, true);
+    room.seats[decision.seat].peerId = peerId;
     return {
-      ok: false,
-      code: 'PLAYING',
-      message: '牌局已经开始，等这一局结束再来吧'
+      ok: true,
+      seat: decision.seat,
+      token,
+      reconnected: true,
+      name: room.seats[decision.seat].name
     };
+  }
+
+  if (decision.action === 'reject') {
+    return { ok: false, code: decision.code, message: decision.message };
   }
 
   const result = addPlayer(room, { name, token, peerId });
@@ -1242,7 +1355,10 @@ function hostOnGuestJoined(seat, result) {
   const player = app.room.seats[seat];
   if (!player) return;
   publishHost();
-  if (result.reconnected) {
+  if (result.approved) {
+    toast(`${player.name} 坐回了原来的座位`);
+    tone('tap');
+  } else if (result.reconnected) {
     toast(`${player.name} 回来了`);
   } else {
     toast(`${player.name} 入座了`);
@@ -1511,6 +1627,9 @@ async function joinOnlineRoom(rawCode) {
     },
     onChat: (data) => handleChatMessage(data.seat, data.text),
     onToast: (message) => toast(message),
+    onPending: (message) => {
+      showLoading('等房主确认', message || '房主正在确认你的座位，稍等一下。');
+    },
     onClose: (info) => handleGuestClose(info),
     onStatus: (status) => {
       app.guestStatus = status;
@@ -1612,6 +1731,9 @@ async function reconnectGuest() {
     },
     onChat: (data) => handleChatMessage(data.seat, data.text),
     onToast: (message) => toast(message),
+    onPending: (message) => {
+      showLoading('等房主确认', message || '房主正在确认你的座位，稍等一下。');
+    },
     onClose: (info) => handleGuestClose(info),
     onStatus: (status) => {
       app.guestStatus = status;
@@ -2121,7 +2243,7 @@ function openResult() {
   const ranking = snapshot.ranking || [];
   const title = winner.isSelf ? '您上游啦！' : `${winner.name} 上游`;
   const sub = winner.isSelf
-    ? '最先出完，这一桌您最利索。'
+    ? '最先出完，这一桌您最快。'
     : '最先出完，血战到只剩最后一位。';
   const rankRows = ranking
     .map((entry) => {
@@ -2424,6 +2546,12 @@ async function handleAction(action, target) {
       break;
     case 'request-leave':
       requestLeave();
+      break;
+    case 'allow-join':
+      settleJoinRequest(app.activeJoinRequest, true);
+      break;
+    case 'deny-join':
+      settleJoinRequest(app.activeJoinRequest, false);
       break;
     default:
       break;

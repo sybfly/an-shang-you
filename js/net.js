@@ -197,9 +197,13 @@ export class PeerHost {
       }, 350);
     };
 
-    conn.on('data', (data) => {
+    // onJoin 允许返回 Promise：房主需要人工审批时，会一直等着房主点头。
+    let joining = false;
+
+    conn.on('data', async (data) => {
       if (!data || typeof data !== 'object') return;
       if (!joined) {
+        if (joining) return;
         if (data.type !== 'join') {
           rejectJoin('BAD_JOIN', '连接还没准备好，请重新进入房间');
           return;
@@ -208,9 +212,10 @@ export class PeerHost {
           rejectJoin('VERSION', '页面版本不一致，请刷新后再试');
           return;
         }
+        joining = true;
         let result;
         try {
-          result = this.onJoin?.({
+          result = await this.onJoin?.({
             peerId,
             token: typeof data.token === 'string' ? data.token.slice(0, 80) : '',
             name: data.name,
@@ -220,6 +225,8 @@ export class PeerHost {
           console.error('join handler failed', error);
           result = { ok: false, message: '入座时出了点小问题，请重试' };
         }
+        joining = false;
+        if (conn.open === false) return;
         if (!result?.ok) {
           rejectJoin(result?.code || 'JOIN_REJECTED', result?.message || '暂时不能入座');
           return;
@@ -352,6 +359,7 @@ export class PeerGuest {
     onState,
     onChat,
     onToast,
+    onPending,
     onClose,
     onStatus,
     onError
@@ -362,6 +370,7 @@ export class PeerGuest {
     this.onState = onState;
     this.onChat = onChat;
     this.onToast = onToast;
+    this.onPending = onPending;
     this.onClose = onClose;
     this.onStatus = onStatus;
     this.onError = onError;
@@ -404,9 +413,14 @@ export class PeerGuest {
       }
       this.peer = peer;
 
-      connectTimer = setTimeout(() => {
-        fail(new Error('连接超时，请检查房间号和网络'));
-      }, 18000);
+      // 房主可能需要人工审批，审批期间把超时放宽，避免房主还没看完就断了。
+      const armTimer = (ms) => {
+        clearTimeout(connectTimer);
+        connectTimer = setTimeout(() => {
+          fail(new Error('连接超时，请检查房间号和网络'));
+        }, ms);
+      };
+      armTimer(18000);
 
       peer.on('open', () => {
         if (settled) return;
@@ -432,6 +446,11 @@ export class PeerGuest {
 
         conn.on('data', (data) => {
           if (!data || typeof data !== 'object') return;
+          if (data.type === 'pending') {
+            this.onPending?.(data.message || '正在等房主确认');
+            armTimer(90000);
+            return;
+          }
           if (data.type === 'welcome') {
             succeed(data);
             // 欢迎包和第一份牌桌状态之间可能存在极短的竞态，主动要一次状态。
