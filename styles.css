@@ -1581,7 +1581,7 @@ p {
 
 .seat {
   position: relative;
-  min-width: 146px;
+  min-width: 160px;
   padding: 8px 12px 8px 8px;
   display: flex;
   align-items: center;
@@ -1833,7 +1833,16 @@ p {
   color: rgba(255, 249, 233, 0.62);
   font-size: 0.5rem;
   line-height: 1.4;
-  white-space: nowrap;
+}
+
+.seat-report-label {
+  flex: 0 0 auto;
+}
+
+/* 每行两个，第三位开始落到下一行 */
+.seat-report-break {
+  flex: 0 0 100%;
+  height: 0;
 }
 
 .mini-claim {
@@ -3537,29 +3546,41 @@ button.pcard.is-playable:hover {
 .join-request {
   position: fixed;
   z-index: 170;
-  top: calc(var(--topbar-h) + 10px);
+  top: 50%;
   left: 50%;
-  width: min(560px, calc(100% - 24px));
+  width: min(340px, calc(100% - 48px));
+  max-height: calc(100% - 48px);
+  overflow-y: auto;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-  padding: 14px 16px;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 18px 16px;
   border: 1px solid rgba(239, 196, 94, 0.55);
   border-radius: var(--radius-md);
   background: var(--cream);
-  box-shadow: var(--shadow-lg);
+  box-shadow:
+    0 0 0 100vmax rgba(4, 20, 13, 0.55),
+    var(--shadow-lg);
   color: var(--ink);
-  transform: translateX(-50%);
-  animation: toast-in 220ms ease both;
+  transform: translate(-50%, -50%);
+  animation: join-request-in 200ms ease both;
+}
+
+@keyframes join-request-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -46%) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
 }
 
 .jr-body {
   display: flex;
-  flex: 1 1 280px;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -3573,8 +3594,8 @@ button.pcard.is-playable:hover {
 .jr-text {
   margin: 0;
   color: var(--ink-soft);
-  font-size: 0.86rem;
-  line-height: 1.5;
+  font-size: 0.84rem;
+  line-height: 1.55;
 }
 
 .jr-text strong {
@@ -3583,19 +3604,12 @@ button.pcard.is-playable:hover {
 
 .jr-actions {
   display: flex;
-  flex-shrink: 0;
   gap: 8px;
 }
 
-@media (max-width: 560px) {
-  .join-request {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .jr-actions {
-    justify-content: flex-end;
-  }
+.jr-actions .btn {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* 彩纸 */
@@ -4097,7 +4111,7 @@ button.pcard.is-playable:hover {
 
   .seat {
     min-width: 0;
-    width: 100px;
+    width: 112px;
     padding: 5px 6px;
     gap: 5px;
     border-radius: 12px;
@@ -4506,7 +4520,7 @@ button.pcard.is-playable:hover {
   }
 
   .seat {
-    width: 94px;
+    width: 106px;
   }
 
   .seat-avatar {

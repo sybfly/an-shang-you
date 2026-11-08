@@ -737,17 +737,19 @@ function claimsText(claims) {
 function seatClaimsHtml(action) {
   const claims = action?.claims || [];
   if (!claims.length) return '';
-  const chips = claims
-    .slice(0, 2)
-    .map(
-      (claim) =>
-        `<span class="mini-claim ${claim.dir}">${claim.dir === 'higher' ? '↑' : '↓'}${escapeHtml(
-          (claim.targetName || '?').slice(0, 2)
-        )}</span>`
-    )
-    .join('');
-  const more = claims.length > 2 ? `<span class="mini-claim">+${claims.length - 2}</span>` : '';
-  return `<span class="seat-report" title="${escapeHtml(claimsText(claims))}">报 ${chips}${more}</span>`;
+  const chips = claims.map(
+    (claim) =>
+      `<span class="mini-claim ${claim.dir}">${claim.dir === 'higher' ? '↑' : '↓'}${escapeHtml(
+        (claim.targetName || '?').slice(0, 2)
+      )}</span>`
+  );
+  // 一行放两个，第三位开始换到下一行；人多的时候也看得全。
+  if (chips.length > 2) {
+    chips.splice(2, 0, '<span class="seat-report-break" aria-hidden="true"></span>');
+  }
+  return `<span class="seat-report" title="${escapeHtml(claimsText(claims))}"><span class="seat-report-label">报</span>${chips.join(
+    ''
+  )}</span>`;
 }
 
 function opponentOrder() {
